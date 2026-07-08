@@ -1,0 +1,10 @@
+{
+  "id": "vault-telegram-bridge",
+  "name": "Telegram Inbox",
+  "version": "0.2.0",
+  "minAppVersion": "1.7.2",
+  "description": "Capture messages from a Telegram bot into a daily note in your vault. No server required.",
+  "author": "N23eos",
+  "authorUrl": "https://github.com/N23eos",
+  "isDesktopOnly": false
+}

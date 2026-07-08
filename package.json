@@ -1,0 +1,38 @@
+{
+  "name": "vault-telegram-bridge",
+  "version": "0.2.0",
+  "description": "Capture messages from a Telegram bot into a daily note in your Obsidian vault.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run typecheck && npm run lint && node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs",
+    "install:vault": "node scripts/install-to-vault.mjs",
+    "spike:build": "node esbuild.config.mjs spike production",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -noEmit -skipLibCheck",
+    "lint": "eslint src tests --ext .ts",
+    "format": "prettier --write \"{src,spikes,tests}/**/*.ts\""
+  },
+  "keywords": ["obsidian", "telegram"],
+  "author": "N23eos",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.23.0",
+    "eslint": "^8.57.0",
+    "obsidian": "^1.7.2",
+    "prettier": "^3.3.0",
+    "telegram": "2.26.21",
+    "tslib": "^2.6.3",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {},
+  "comment:no-runtime-dependencies": "v0.1 (bot mode) ships with zero runtime dependencies: the Bot API is reached through Obsidian's requestUrl. GramJS is a devDependency used only by the throwaway Phase 0 spike, and esbuild.config.mjs fails the product build if src/ ever imports it.",
+  "comment:telegram-version": "Pinned exactly. The 'latest' dist-tag is the Node build and does not bundle for the browser; only the 'browser' tag does. See docs/SPIKE-REPORT.md 0.1-F1."
+}

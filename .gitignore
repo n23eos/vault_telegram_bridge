@@ -1,0 +1,14 @@
+node_modules/
+main.js
+main.js.map
+*.log
+.DS_Store
+spikes/dist/
+coverage/
+
+# NEVER commit these — see docs/SECURITY-DECISION.md
+telegram-session.json.enc
+*.session
+.env
+.env.local
+spike-credentials.json

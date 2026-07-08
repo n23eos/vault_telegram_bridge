@@ -1,0 +1,27 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint"],
+  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+  "parserOptions": { "sourceType": "module", "ecmaVersion": 2021 },
+  "env": { "browser": true, "es2021": true },
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": ["node:*"],
+        "paths": [
+          { "name": "fs", "message": "TZ §1: no Node API. isDesktopOnly is false." },
+          { "name": "path", "message": "TZ §1: use normalizePath() from obsidian." },
+          { "name": "crypto", "message": "TZ §1: use WebCrypto (crypto.subtle)." },
+          { "name": "os", "message": "TZ §1: no Node API." },
+          { "name": "child_process", "message": "TZ §1: no Node API." },
+          { "name": "electron", "message": "TZ §1: no Electron API. safeStorage is not available to us." }
+        ]
+      }
+    ],
+    "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-explicit-any": "warn"
+  },
+  "ignorePatterns": ["main.js", "node_modules/", "spikes/dist/"]
+}
