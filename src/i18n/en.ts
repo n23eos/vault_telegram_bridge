@@ -8,7 +8,7 @@
  */
 export const en = {
   // --- plugin ---
-  'plugin.name': 'Telegram Inbox',
+  'plugin.name': 'Vault Telegram Bridge',
 
   // --- connection ---
   'conn.status.disconnected': 'Not connected',

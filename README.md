@@ -1,4 +1,4 @@
-# Telegram Inbox
+# Vault Telegram Bridge
 
 Send yourself a message in Telegram. It shows up in your Obsidian daily note.
 
@@ -44,7 +44,7 @@ Capture is instant. **Delivery happens while Obsidian is open** — the plugin p
 
 1. Install the plugin and enable it.
 2. In Telegram, message [@BotFather](https://t.me/botfather), send `/newbot`, follow the two prompts, copy the token it gives you.
-3. Obsidian → Settings → Telegram Inbox → paste the token → **Connect**.
+3. Obsidian → Settings → Vault Telegram Bridge → paste the token → **Connect**.
 4. Send your new bot a message. That chat is now bound to the plugin.
 
 That's it. Optionally set the folder, the note-name format, and the heading.
