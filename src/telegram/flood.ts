@@ -36,7 +36,7 @@ export interface FloodPolicyDeps {
 
 export function realDeps(onLongWait?: (seconds: number) => void): FloodPolicyDeps {
   return {
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    sleep: (ms) => new Promise((r) => window.setTimeout(r, ms)),
     now: () => Date.now(),
     jitter: () => Math.random(),
     onLongWait,

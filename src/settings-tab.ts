@@ -1,4 +1,5 @@
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import type { SettingDefinitionItem, SettingGroupItem } from 'obsidian';
 import { HumanError } from './errors';
 import { t } from './i18n';
 import type TelegramInboxPlugin from './main';
@@ -22,212 +23,268 @@ export class SettingsTab extends PluginSettingTab {
     super(app, plugin);
   }
 
-  display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      ...this.connectionDefinitions(),
+      { type: 'group', heading: t('settings.section.destination'), items: this.destinationDefinitions() },
+      { type: 'group', heading: t('settings.section.format'), items: this.formatDefinitions() },
+      { type: 'group', heading: t('settings.section.sync'), items: this.syncDefinitions() },
+    ];
+  }
 
-    this.renderConnection(containerEl);
-    this.renderDestination(containerEl);
-    this.renderFormat(containerEl);
-    this.renderSync(containerEl);
+  getControlValue(key: string): unknown {
+    const s = this.plugin.settings;
+    switch (key) {
+      case 'folder':
+        return s.folder;
+      case 'heading':
+        return s.heading;
+      case 'lineTemplate':
+        return s.lineTemplate;
+      case 'blockStyle':
+        return s.blockStyle;
+      case 'calloutType':
+        return s.calloutType;
+      case 'syncIntervalSeconds':
+        // The slider tops out at 300; anything stored above that shows as 300.
+        return Math.min(s.syncIntervalSeconds, 300);
+      default:
+        return undefined;
+    }
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    const s = this.plugin.settings;
+    switch (key) {
+      case 'folder':
+        s.folder = stripSlashes(String(value));
+        break;
+      case 'heading': {
+        const next = String(value).trim();
+        if (next === '') return;
+        s.heading = next;
+        break;
+      }
+      case 'lineTemplate': {
+        const v = String(value);
+        if (v.trim() === '') return;
+        s.lineTemplate = v.replace(/\n/g, ' ').trimEnd();
+        break;
+      }
+      case 'blockStyle':
+        s.blockStyle = value as BlockStyle;
+        break;
+      case 'calloutType': {
+        const v = String(value).trim();
+        if (!/^[A-Za-z-]+$/.test(v)) return;
+        s.calloutType = v;
+        break;
+      }
+      case 'syncIntervalSeconds':
+        s.syncIntervalSeconds = Math.min(
+          Math.max(Number(value), MIN_SYNC_INTERVAL_SECONDS),
+          MAX_SYNC_INTERVAL_SECONDS,
+        );
+        break;
+      default:
+        return;
+    }
+    await this.plugin.saveSettings();
+    switch (key) {
+      case 'blockStyle':
+        // The callout-type field and the code-block warning appear and vanish.
+        this.refreshDomState();
+        this.refreshPreview();
+        break;
+      case 'lineTemplate':
+      case 'calloutType':
+        this.refreshDomState();
+        this.refreshPreview();
+        break;
+      case 'syncIntervalSeconds':
+        this.plugin.restartTimer();
+        break;
+    }
   }
 
   /* ---------------- connection ---------------- */
 
-  private renderConnection(root: HTMLElement): void {
+  private connectionDefinitions(): SettingDefinitionItem[] {
     const s = this.plugin.settings;
-    const connected = this.plugin.client.status() === 'connected';
-
-    new Setting(root)
-      .setName(t('settings.token.name'))
-      .setDesc(t('settings.token.desc'))
-      .addText((text) => {
-        text
-          .setPlaceholder(t('settings.token.placeholder'))
-          .setValue(s.botToken)
-          .onChange(async (v) => {
-            s.botToken = v.trim();
-            await this.plugin.saveSettings();
-          });
-        // A bot token is a credential. Do not render it in the clear next to a
-        // screen the user might be sharing.
-        text.inputEl.type = 'password';
-        text.inputEl.autocomplete = 'off';
-      })
-      .addButton((b) =>
-        b
-          .setButtonText(t('settings.token.connect'))
-          .setCta()
-          .onClick(async () => {
-            if (!looksLikeBotToken(s.botToken)) {
-              new Notice(t('error.tokenShape'));
-              return;
-            }
-            try {
-              const name = await this.plugin.reconnect();
-              new Notice(t('settings.token.connected', { name }));
-            } catch (e) {
-              new Notice(e instanceof HumanError ? e.human : t('error.unknown', { message: String(e) }));
-            }
-            this.display();
-          }),
-      );
-
-    if (connected || s.botToken) {
-      new Setting(root)
-        .setName(t('settings.disconnect.name'))
-        .setDesc(t('settings.disconnect.desc'))
-        .addButton((b) =>
-          b
-            .setButtonText(t('settings.disconnect.button'))
-            .setWarning()
-            .onClick(async () => {
-              await this.plugin.client.wipe();
-              s.botToken = '';
-              s.boundChatId = null;
-              s.cursor = undefined;
-              await this.plugin.saveSettings();
-              new Notice(t('settings.disconnect.done'));
-              this.display();
-            }),
-        );
-    }
-
-    const bound = new Setting(root)
-      .setName(t('settings.boundChat.name'))
-      .setDesc(t('settings.boundChat.desc'));
-
-    if (s.boundChatId) {
-      bound.addExtraButton((b) =>
-        b
-          .setIcon('rotate-ccw')
-          .setTooltip(t('settings.boundChat.reset'))
-          .onClick(async () => {
-            s.boundChatId = null;
-            await this.plugin.saveSettings();
-            new Notice(t('settings.boundChat.resetDone'));
-            this.display();
-          }),
-      );
-      bound.descEl.createEl('div', {
-        text: t('settings.boundChat.bound', { chatId: s.boundChatId }),
-        cls: 'mod-success',
-      });
-    } else {
-      bound.descEl.createEl('div', { text: t('settings.boundChat.none') });
-    }
+    return [
+      {
+        name: t('settings.token.name'),
+        desc: t('settings.token.desc'),
+        render: (setting: Setting) => {
+          setting
+            .addText((text) => {
+              text
+                .setPlaceholder(t('settings.token.placeholder'))
+                .setValue(s.botToken)
+                .onChange(async (v) => {
+                  s.botToken = v.trim();
+                  await this.plugin.saveSettings();
+                  this.refreshDomState();
+                });
+              // A bot token is a credential. Do not render it in the clear next to a
+              // screen the user might be sharing.
+              text.inputEl.type = 'password';
+              text.inputEl.autocomplete = 'off';
+            })
+            .addButton((b) =>
+              b
+                .setButtonText(t('settings.token.connect'))
+                .setCta()
+                .onClick(async () => {
+                  if (!looksLikeBotToken(s.botToken)) {
+                    new Notice(t('error.tokenShape'));
+                    return;
+                  }
+                  try {
+                    const name = await this.plugin.reconnect();
+                    new Notice(t('settings.token.connected', { name }));
+                  } catch (e) {
+                    new Notice(e instanceof HumanError ? e.human : t('error.unknown', { message: String(e) }));
+                  }
+                  this.update();
+                }),
+            );
+        },
+      },
+      {
+        name: t('settings.disconnect.name'),
+        desc: t('settings.disconnect.desc'),
+        visible: () => this.plugin.client.status() === 'connected' || this.plugin.settings.botToken !== '',
+        render: (setting: Setting) => {
+          setting.addButton((b) =>
+            b
+              .setButtonText(t('settings.disconnect.button'))
+              .setDestructive()
+              .onClick(async () => {
+                await this.plugin.client.wipe();
+                s.botToken = '';
+                s.boundChatId = null;
+                s.cursor = undefined;
+                await this.plugin.saveSettings();
+                new Notice(t('settings.disconnect.done'));
+                this.update();
+              }),
+          );
+        },
+      },
+      {
+        name: t('settings.boundChat.name'),
+        desc: t('settings.boundChat.desc'),
+        render: (setting: Setting) => {
+          if (s.boundChatId) {
+            setting.addExtraButton((b) =>
+              b
+                .setIcon('rotate-ccw')
+                .setTooltip(t('settings.boundChat.reset'))
+                .onClick(async () => {
+                  s.boundChatId = null;
+                  await this.plugin.saveSettings();
+                  new Notice(t('settings.boundChat.resetDone'));
+                  this.update();
+                }),
+            );
+            setting.descEl.createEl('div', {
+              text: t('settings.boundChat.bound', { chatId: s.boundChatId }),
+              cls: 'mod-success',
+            });
+          } else {
+            setting.descEl.createEl('div', { text: t('settings.boundChat.none') });
+          }
+        },
+      },
+    ];
   }
 
   /* ---------------- destination ---------------- */
 
-  private renderDestination(root: HTMLElement): void {
+  private destinationDefinitions(): SettingGroupItem[] {
     const s = this.plugin.settings;
-    new Setting(root).setName(t('settings.section.destination')).setHeading();
-
-    new Setting(root)
-      .setName(t('settings.folder.name'))
-      .setDesc(t('settings.folder.desc'))
-      .addText((text) =>
-        text
-          .setPlaceholder(t('settings.folder.placeholder'))
-          .setValue(s.folder)
-          .onChange(async (v) => {
-            s.folder = stripSlashes(v);
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    const filename = new Setting(root).setName(t('settings.filename.name'));
-
-    const updatePreview = () => {
-      filename.setDesc(t('settings.filename.desc', { preview: this.previewPath() }));
-    };
-    updatePreview();
-
-    filename.addText((text) =>
-      text
-        .setPlaceholder(t('settings.filename.placeholder'))
-        .setValue(s.filenameTemplate)
-        .onChange(async (v) => {
-          s.filenameTemplate = v.trim();
-          await this.plugin.saveSettings();
-          // Live preview is the whole reason a template field is tolerable.
+    return [
+      {
+        name: t('settings.folder.name'),
+        desc: t('settings.folder.desc'),
+        control: { type: 'text', key: 'folder', placeholder: t('settings.folder.placeholder') },
+      },
+      {
+        name: t('settings.filename.name'),
+        render: (setting: Setting) => {
+          const updatePreview = () => {
+            setting.setDesc(t('settings.filename.desc', { preview: this.previewPath() }));
+          };
           updatePreview();
-        }),
-    );
 
-    new Setting(root)
-      .setName(t('settings.heading.name'))
-      .setDesc(t('settings.heading.desc'))
-      .addText((text) =>
-        text.setValue(s.heading).onChange(async (v) => {
-          const next = v.trim();
-          if (next !== '') {
-            s.heading = next;
-            await this.plugin.saveSettings();
-          }
-        }),
-      );
+          setting.addText((text) =>
+            text
+              .setPlaceholder(t('settings.filename.placeholder'))
+              .setValue(s.filenameTemplate)
+              .onChange(async (v) => {
+                s.filenameTemplate = v.trim();
+                await this.plugin.saveSettings();
+                // Live preview is the whole reason a template field is tolerable.
+                updatePreview();
+              }),
+          );
+        },
+      },
+      {
+        name: t('settings.heading.name'),
+        desc: t('settings.heading.desc'),
+        control: { type: 'text', key: 'heading' },
+      },
+    ];
   }
 
   /* ---------------- format ---------------- */
 
-  private renderFormat(root: HTMLElement): void {
-    const s = this.plugin.settings;
-    new Setting(root).setName(t('settings.section.format')).setHeading();
-
-    new Setting(root)
-      .setName(t('settings.template.name'))
-      .setDesc(t('settings.template.desc'))
-      .addText((text) =>
-        text
-          .setPlaceholder(t('settings.template.placeholder'))
-          .setValue(s.lineTemplate)
-          .onChange(async (v) => {
-            if (v.trim() === '') return;
-            s.lineTemplate = v.replace(/\n/g, ' ').trimEnd();
-            await this.plugin.saveSettings();
-            this.refreshPreview();
-          }),
-      );
-
-    new Setting(root)
-      .setName(t('settings.blockStyle.name'))
-      .addDropdown((d) => {
-        for (const style of BLOCK_STYLES) d.addOption(style, t(`settings.blockStyle.${style}`));
-        d.setValue(s.blockStyle).onChange(async (v) => {
-          s.blockStyle = v as BlockStyle;
-          await this.plugin.saveSettings();
-          // The callout-type field and the code-block warning appear and vanish.
-          this.display();
-        });
-      });
-
-    if (s.blockStyle === 'code') {
-      root.createEl('div', { text: t('settings.blockStyle.codeWarning'), cls: 'setting-item-description' });
-    }
-
-    if (s.blockStyle === 'callout') {
-      new Setting(root)
-        .setName(t('settings.calloutType.name'))
-        .setDesc(t('settings.calloutType.desc'))
-        .addText((text) =>
-          text.setValue(s.calloutType).onChange(async (v) => {
-            if (!/^[A-Za-z-]+$/.test(v.trim())) return;
-            s.calloutType = v.trim();
-            await this.plugin.saveSettings();
-            this.refreshPreview();
-          }),
-        );
-    }
-
-    const preview = new Setting(root).setName(t('settings.preview.name'));
-    this.previewEl = preview.controlEl.createEl('pre', { cls: 'telegram-inbox-preview' });
-    this.refreshPreview();
-
-    if (!s.lineTemplate.includes('{text}')) {
-      root.createEl('div', { text: t('error.noTextPlaceholder'), cls: 'mod-warning' });
-    }
+  private formatDefinitions(): SettingGroupItem[] {
+    return [
+      {
+        name: t('settings.template.name'),
+        desc: t('settings.template.desc'),
+        control: { type: 'text', key: 'lineTemplate', placeholder: t('settings.template.placeholder') },
+      },
+      {
+        name: t('settings.blockStyle.name'),
+        control: {
+          type: 'dropdown',
+          key: 'blockStyle',
+          options: Object.fromEntries(BLOCK_STYLES.map((style) => [style, t(`settings.blockStyle.${style}`)])),
+        },
+      },
+      {
+        name: '',
+        desc: t('settings.blockStyle.codeWarning'),
+        visible: () => this.plugin.settings.blockStyle === 'code',
+        searchable: false,
+      },
+      {
+        name: t('settings.calloutType.name'),
+        desc: t('settings.calloutType.desc'),
+        visible: () => this.plugin.settings.blockStyle === 'callout',
+        control: { type: 'text', key: 'calloutType' },
+      },
+      {
+        name: t('settings.preview.name'),
+        render: (setting: Setting) => {
+          this.previewEl = setting.controlEl.createEl('pre', { cls: 'telegram-inbox-preview' });
+          this.refreshPreview();
+          return () => {
+            this.previewEl = null;
+          };
+        },
+      },
+      {
+        name: '',
+        desc: t('error.noTextPlaceholder'),
+        visible: () => !this.plugin.settings.lineTemplate.includes('{text}'),
+        searchable: false,
+      },
+    ];
   }
 
   /**
@@ -258,35 +315,32 @@ export class SettingsTab extends PluginSettingTab {
 
   /* ---------------- sync ---------------- */
 
-  private renderSync(root: HTMLElement): void {
-    const s = this.plugin.settings;
-    new Setting(root).setName(t('settings.section.sync')).setHeading();
-
-    new Setting(root)
-      .setName(t('settings.interval.name'))
-      .setDesc(t('settings.interval.desc'))
-      .addSlider((slider) =>
-        slider
-          .setLimits(MIN_SYNC_INTERVAL_SECONDS, 300, 15)
-          .setValue(Math.min(s.syncIntervalSeconds, 300))
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.syncIntervalSeconds = Math.min(Math.max(v, MIN_SYNC_INTERVAL_SECONDS), MAX_SYNC_INTERVAL_SECONDS);
-            await this.plugin.saveSettings();
-            this.plugin.restartTimer();
-          }),
-      );
-
-    new Setting(root)
-      .setName(t('settings.syncNow.name'))
-      .addButton((b) =>
-        b.setButtonText(t('settings.syncNow.button')).onClick(async () => {
-          await this.plugin.syncNow('manual');
-          this.display();
-        }),
-      );
-
-    new Setting(root).setName(t('settings.status.name')).setDesc(this.statusText());
+  private syncDefinitions(): SettingGroupItem[] {
+    return [
+      {
+        name: t('settings.interval.name'),
+        desc: t('settings.interval.desc'),
+        control: {
+          type: 'slider',
+          key: 'syncIntervalSeconds',
+          min: MIN_SYNC_INTERVAL_SECONDS,
+          max: 300,
+          step: 15,
+        },
+      },
+      {
+        name: t('settings.syncNow.name'),
+        render: (setting: Setting) => {
+          setting.addButton((b) =>
+            b.setButtonText(t('settings.syncNow.button')).onClick(async () => {
+              await this.plugin.syncNow('manual');
+              this.update();
+            }),
+          );
+        },
+      },
+      { name: t('settings.status.name'), desc: this.statusText() },
+    ];
   }
 
   private statusText(): string {

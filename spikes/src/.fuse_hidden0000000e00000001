@@ -5,7 +5,7 @@
  * PDF. Record what you see against the checklist in docs/MANUAL-TEST-GUIDE.md.
  */
 /** Zero-width space, written as an escape so linters don't trip over a literal invisible char. */
-const ZWSP = '\u200B';
+const ZWSP = '​';
 
 export const DEDUPE_TEST_NOTE = `---
 tags: [spike, throwaway]

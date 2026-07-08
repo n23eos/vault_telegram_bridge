@@ -16,14 +16,16 @@
     "lint": "eslint src tests --ext .ts",
     "format": "prettier --write \"{src,spikes,tests}/**/*.ts\""
   },
-  "keywords": ["obsidian", "telegram"],
+  "keywords": [
+    "obsidian",
+    "telegram"
+  ],
   "author": "N23eos",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@typescript-eslint/eslint-plugin": "^7.16.0",
     "@typescript-eslint/parser": "^7.16.0",
-    "builtin-modules": "^3.3.0",
     "esbuild": "^0.23.0",
     "eslint": "^8.57.0",
     "obsidian": "^1.7.2",

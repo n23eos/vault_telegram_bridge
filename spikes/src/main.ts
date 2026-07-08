@@ -37,12 +37,12 @@ export default class SpikePlugin extends Plugin {
 
   async onload() {
     this.onloadStart = performance.now();
-    this.data = Object.assign({}, DEFAULT_DATA, await this.loadData());
+    this.data = Object.assign({}, DEFAULT_DATA, (await this.loadData()) as Partial<SpikeData> | null);
     this.addSettingTab(new SpikeSettingsTab(this.app, this));
     this.log(`plugin onload (shell only, gramjs not yet imported): ${(performance.now() - this.onloadStart).toFixed(1)} ms`);
   }
 
-  async onunload() {
+  onunload() {
     // Spike has no long-lived resources of its own; the gramjs client is
     // disconnected explicitly in runGramjsSpike().
   }
@@ -234,9 +234,7 @@ class SpikeSettingsTab extends PluginSettingTab {
     );
 
     const pre = containerEl.createEl('pre');
-    pre.style.maxHeight = '300px';
-    pre.style.overflow = 'auto';
-    pre.style.fontSize = '11px';
+    pre.setCssStyles({ maxHeight: '300px', overflow: 'auto', fontSize: '11px' });
     pre.setText(this.plugin.data.log.slice(-40).join('\n') || '(empty)');
   }
 }
