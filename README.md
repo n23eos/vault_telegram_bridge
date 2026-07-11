@@ -4,7 +4,7 @@ Send yourself a message in Telegram — it appears in your Obsidian daily note.
 
 No server, no VPS, no Docker. Works on desktop and mobile.
 
-> **v0.1 — bot mode.** You create a bot with [@BotFather](https://t.me/botfather) and message it. Account mode — Saved Messages sync, nothing expires — is planned for v0.3. See [ADR-001](docs/ADR-001-bot-mode-first.md) for why that order.
+![A message sent to the bot in Telegram appears in the Obsidian daily note](https://raw.githubusercontent.com/N23eos/vault_telegram_bridge/main/docs/screenshots/capture.jpg)
 
 ## How it works
 
@@ -15,6 +15,18 @@ No server, no VPS, no Docker. Works on desktop and mobile.
 Folder, note name and heading are configurable. Delivered message IDs are recorded in the note's frontmatter (`tg_ids`) — hidden in Reading View, travelling with the note — so two devices syncing one vault never produce duplicates.
 
 Capture is instant; **delivery happens while Obsidian is open**. The plugin polls Telegram every thirty seconds, and there is no background execution on mobile. If Obsidian is closed, your message waits.
+
+## Setup
+
+**1. Create a bot.** Message [@BotFather](https://t.me/botfather) in Telegram: `/newbot`, answer two prompts (a display name, then a username ending in `bot`), copy the token it gives you.
+
+![Creating a bot with @BotFather: New Bot, pick a name and username, copy the token](https://raw.githubusercontent.com/N23eos/vault_telegram_bridge/main/docs/screenshots/botfather.jpg)
+
+**2. Connect the plugin.** Obsidian → Settings → Vault Telegram Bridge → paste the token → **Connect**. The same screen sets where messages go (folder, note name, heading) and how each entry looks.
+
+![Plugin settings: bot token, target folder and note name, heading, line format](https://raw.githubusercontent.com/N23eos/vault_telegram_bridge/main/docs/screenshots/settings.jpg)
+
+**3. Send your new bot a message.** That chat is now bound to the plugin; messages from any other chat are ignored.
 
 ## Entry format
 
@@ -33,13 +45,6 @@ Each entry can be wrapped in nothing, a fenced code block (Markdown is inert the
 > [!tip]
 > ✏️ **15:29** an idea on a walk
 ```
-
-## Setup
-
-1. Install the plugin and enable it.
-2. Message [@BotFather](https://t.me/botfather): `/newbot`, two prompts, copy the token.
-3. Obsidian → Settings → Vault Telegram Bridge → paste the token → **Connect**.
-4. Send your new bot a message. That chat is now bound to the plugin.
 
 ## Network use
 
@@ -61,8 +66,8 @@ The plugin will never send messages, set reactions, read chats you did not point
 
 ## Known limits
 
-- **Messages expire after 24 hours.** Telegram queues undelivered bot updates for one day. If Obsidian stays closed longer, the message survives only in the chat with your bot. Account mode (v0.3) has no such limit.
-- **Text only, for now.** Photos, voice notes and documents are counted, skipped, and reported. Attachments arrive in v0.2.
+- **Messages expire after 24 hours.** Telegram queues undelivered bot updates for one day. If Obsidian stays closed longer, the message survives only in the chat with your bot. Account mode (planned — Saved Messages sync, nothing expires) has no such limit; see [ADR-001](docs/ADR-001-bot-mode-first.md) for why bot mode ships first.
+- **Text only, for now.** Photos, voice notes and documents are counted, skipped, and reported. Attachments are planned for a later version.
 - **One poller per bot.** If desktop and phone are both open, one wins the poll and the other backs off; the note reaches it through your normal vault sync. Handled, not an error.
 - **Edits and deletions in Telegram don't touch the note.** Deliberate: the note is yours.
 
@@ -75,9 +80,9 @@ npm run typecheck # strict
 npm run build     # typecheck + lint + bundle to main.js
 ```
 
-The build fails if any code imports a Node or Electron API (the plugin must run on mobile), or if the product bundle imports GramJS (v0.3 account-mode work; used only by the Phase 0 spike under `spikes/`).
+The build fails if any code imports a Node or Electron API (the plugin must run on mobile), or if the product bundle imports GramJS (account-mode work; used only by the Phase 0 spike under `spikes/`).
 
-Worth reading before changing anything: [ADR-001](docs/ADR-001-bot-mode-first.md) — why bot mode ships first; [SPIKE-REPORT](docs/SPIKE-REPORT.md) — Phase 0 findings, including a duplication bug the obvious implementation would have shipped; [SECURITY-DECISION](docs/SECURITY-DECISION.md) — v0.3 session storage; [MANUAL-TEST-GUIDE](docs/MANUAL-TEST-GUIDE.md) — checks that need a human and a real phone.
+Worth reading before changing anything: [ADR-001](docs/ADR-001-bot-mode-first.md) — why bot mode ships first; [SPIKE-REPORT](docs/SPIKE-REPORT.md) — Phase 0 findings, including a duplication bug the obvious implementation would have shipped; [SECURITY-DECISION](docs/SECURITY-DECISION.md) — account-mode session storage; [MANUAL-TEST-GUIDE](docs/MANUAL-TEST-GUIDE.md) — checks that need a human and a real phone.
 
 ## Licence
 
