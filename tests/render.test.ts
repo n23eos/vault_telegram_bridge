@@ -203,3 +203,28 @@ describe('joinEntries', () => {
     ]);
   });
 });
+
+describe('renderEntry — attachment line', () => {
+  const ctx = { time: '15:29', date: '2026-07-08' };
+  const embed = '![[Files/TG-2026-07-08-42.jpg]]';
+
+  it('appends the embed after the text in plain style', () => {
+    const opts = { template: '**{time}** {text}', blockStyle: 'plain' as const, calloutType: 'note' };
+    expect(renderEntry('a photo caption', opts, ctx, embed)).toEqual(['**15:29** a photo caption', embed]);
+  });
+
+  it('renders a captionless attachment as timestamp plus embed', () => {
+    const opts = { template: '**{time}** {text}', blockStyle: 'plain' as const, calloutType: 'note' };
+    expect(renderEntry('', opts, ctx, embed)).toEqual(['**15:29**', embed]);
+  });
+
+  it('keeps the embed inside a callout', () => {
+    const opts = { template: '{time} {text}', blockStyle: 'callout' as const, calloutType: 'tip' };
+    expect(renderEntry('cap', opts, ctx, embed)).toEqual(['> [!tip]', '> 15:29 cap', `> ${embed}`]);
+  });
+
+  it('puts the embed after the fence in code style — inside it would not render', () => {
+    const opts = { template: '{time} {text}', blockStyle: 'code' as const, calloutType: 'note' };
+    expect(renderEntry('cap', opts, ctx, embed)).toEqual(['```', '15:29 cap', '```', embed]);
+  });
+});

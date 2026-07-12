@@ -1,10 +1,12 @@
-import { moment, Notice, Plugin } from 'obsidian';
+import { moment, normalizePath, Notice, Plugin, TFile } from 'obsidian';
 import { HumanError } from './errors';
 import { detectLocale, setLocale, t } from './i18n';
 import { DEFAULT_SETTINGS, migrate, type Settings } from './settings';
 import { SettingsTab } from './settings-tab';
 import { SyncEngine } from './sync/engine';
 import { BotClient } from './telegram/bot-client';
+import { VaultAttachmentStore } from './vault/attachments';
+import { readCoreDailyNoteOptions, renderDailyTemplate } from './vault/core-daily-notes';
 import { VaultNoteWriter } from './vault/writer';
 
 /**
@@ -44,13 +46,19 @@ export default class TelegramInboxPlugin extends Plugin {
     this.engine = new SyncEngine({
       source: this.client,
       writer: new VaultNoteWriter(this.app.vault),
-      settings: () => this.settings,
+      settings: () => this.effectiveSettings(),
       persist: async (patch) => {
         Object.assign(this.settings, patch);
         await this.saveSettings();
       },
       format: formatDate,
       onNotice: (e: HumanError) => new Notice(e.human),
+      attachments: new VaultAttachmentStore({
+        app: this.app,
+        download: (fileId) => this.client.download(fileId),
+        format: formatDate,
+      }),
+      seed: (date) => this.dailyNoteSeed(date),
     });
 
     this.addSettingTab(new SettingsTab(this.app, this));
@@ -111,6 +119,42 @@ export default class TelegramInboxPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+  }
+
+  /**
+   * What the engine sees. With the toggle on and the core Daily Notes plugin
+   * alive, its folder and name format replace ours — everything else is still
+   * this plugin's own settings. Falls back silently when the core plugin is
+   * off; the settings tab is where that state is explained.
+   */
+  effectiveSettings(): Settings {
+    if (!this.settings.useCoreDailyNote) return this.settings;
+    const core = readCoreDailyNoteOptions(this.app);
+    if (!core) return this.settings;
+    return { ...this.settings, folder: core.folder, filenameTemplate: core.format };
+  }
+
+  /** The rendered daily-note template for `date`, or `''` when there is nothing to seed with. */
+  private async dailyNoteSeed(date: Date): Promise<string> {
+    if (!this.settings.useCoreDailyNote) return '';
+    const core = readCoreDailyNoteOptions(this.app);
+    if (!core || core.template === '') return '';
+
+    const file = this.templateFile(core.template);
+    if (!file) return '';
+
+    const raw = await this.app.vault.cachedRead(file);
+    const title = formatDate(core.format, date).split('/').pop() ?? '';
+    return renderDailyTemplate(raw, date, formatDate, title);
+  }
+
+  /** The core plugin stores the template path with or without `.md`. Try both. */
+  private templateFile(path: string): TFile | null {
+    for (const candidate of [normalizePath(path), normalizePath(`${path}.md`)]) {
+      const f = this.app.vault.getAbstractFileByPath(candidate);
+      if (f instanceof TFile) return f;
+    }
+    return null;
   }
 
   /** Called by the settings tab after the token changes. */

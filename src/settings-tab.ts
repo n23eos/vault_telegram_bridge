@@ -11,6 +11,7 @@ import {
   stripSlashes,
 } from './settings';
 import { joinEntries, renderEntry, type BlockStyle } from './sync/render';
+import { readCoreDailyNoteOptions } from './vault/core-daily-notes';
 import { resolveDailyNotePath } from './vault/daily-note';
 
 /** SPEC §6, MVP screen. Connect, destination, sync, status. Nothing else. */
@@ -123,6 +124,23 @@ export class SettingsTab extends PluginSettingTab {
   private renderDestination(root: HTMLElement): void {
     const s = this.plugin.settings;
     new Setting(root).setName(t('settings.section.destination')).setHeading();
+
+    const coreToggle = new Setting(root)
+      .setName(t('settings.coreDaily.name'))
+      .setDesc(t('settings.coreDaily.desc'))
+      .addToggle((toggle) =>
+        toggle.setValue(s.useCoreDailyNote).onChange(async (v) => {
+          s.useCoreDailyNote = v;
+          await this.plugin.saveSettings();
+          // The folder and note-name fields appear and vanish.
+          this.display();
+        }),
+      );
+
+    if (s.useCoreDailyNote && readCoreDailyNoteOptions(this.app) === null) {
+      coreToggle.descEl.createEl('div', { text: t('settings.coreDaily.unavailable'), cls: 'mod-warning' });
+    }
+    if (s.useCoreDailyNote) return;
 
     new Setting(root)
       .setName(t('settings.folder.name'))
@@ -250,7 +268,7 @@ export class SettingsTab extends PluginSettingTab {
   /** Renders today's destination, or the reason the template is unusable. */
   private previewPath(): string {
     try {
-      return resolveDailyNotePath(this.plugin.settings, new Date(), formatDate);
+      return resolveDailyNotePath(this.plugin.effectiveSettings(), new Date(), formatDate);
     } catch (e) {
       return e instanceof HumanError ? e.human : String(e);
     }

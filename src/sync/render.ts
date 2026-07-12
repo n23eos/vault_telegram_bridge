@@ -86,15 +86,29 @@ function wrapCallout(lines: string[], calloutType: string): string[] {
   return [`> [!${type}]`, ...lines.map((l) => (l.trim() === '' ? '>' : `> ${l}`))];
 }
 
-/** The Markdown for one message. Never contains a trailing blank line. */
-export function renderEntry(text: string, opts: RenderOptions, ctx: RenderContext): string[] {
+/**
+ * The Markdown for one message. Never contains a trailing blank line.
+ *
+ * `attachmentLine` is an already-rendered Markdown line — an `![[embed]]` or a
+ * placeholder — that belongs to this entry. It joins the callout's body, but in
+ * `code` style it goes *after* the closing fence: an embed inside a fence is
+ * just seven characters of punctuation.
+ */
+export function renderEntry(
+  text: string,
+  opts: RenderOptions,
+  ctx: RenderContext,
+  attachmentLine?: string,
+): string[] {
   if (opts.blockStyle === 'code') {
     // Inside a fence nothing is interpreted, so the text is written untouched.
     // The only hazard is the fence itself, and `fenceFor` handles it.
-    return wrapCode(templated(text, opts, ctx), text + opts.template);
+    const fenced = wrapCode(templated(text, opts, ctx), text + opts.template);
+    return attachmentLine ? [...fenced, attachmentLine] : fenced;
   }
 
   const lines = templated(sanitizeInline(text), opts, ctx);
+  if (attachmentLine) lines.push(attachmentLine);
   return opts.blockStyle === 'callout' ? wrapCallout(lines, opts.calloutType) : lines;
 }
 

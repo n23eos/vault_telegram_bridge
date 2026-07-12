@@ -9,10 +9,12 @@ No server, no VPS, no Docker. Works on desktop and mobile.
 ## How it works
 
 1. Create a Telegram bot (thirty seconds) and paste its token into the plugin.
-2. Send the bot anything — a thought on a walk, a link, a line from a meeting.
+2. Send the bot anything — a thought on a walk, a link, a photo, a voice note, a file.
 3. Next time Obsidian is open, it lands in that day's note, under a heading you choose.
 
-Folder, note name and heading are configurable. Delivered message IDs are recorded in the note's frontmatter (`tg_ids`) — hidden in Reading View, travelling with the note — so two devices syncing one vault never produce duplicates.
+Text keeps its Telegram formatting — bold, italic, links, code arrive as Markdown. Photos, voice notes and documents are saved into your vault's attachment folder and embedded in the entry, caption included.
+
+Folder, note name and heading are configurable — or flip one toggle and the plugin writes into the daily note the core **Daily Notes** plugin owns: its folder, its name format, its template. Delivered message IDs are recorded in the note's frontmatter (`tg_ids`) — hidden in Reading View, travelling with the note — so two devices syncing one vault never produce duplicates.
 
 Capture is instant; **delivery happens while Obsidian is open**. The plugin polls Telegram every thirty seconds, and there is no background execution on mobile. If Obsidian is closed, your message waits.
 
@@ -48,7 +50,7 @@ Each entry can be wrapped in nothing, a fenced code block (Markdown is inert the
 
 ## Network use
 
-The plugin talks to exactly one host, and only once you have configured a token: `https://api.telegram.org` — Telegram's Bot API, over HTTPS, through Obsidian's `requestUrl`. Two methods: `getMe`, once, to verify the token; `getUpdates`, on a timer, to fetch messages sent to your bot.
+The plugin talks to exactly one host, and only once you have configured a token: `https://api.telegram.org` — Telegram's Bot API, over HTTPS, through Obsidian's `requestUrl`. Three methods: `getMe`, once, to verify the token; `getUpdates`, on a timer, to fetch messages sent to your bot; `getFile` plus a file download, only when a message carries an attachment.
 
 No telemetry, no analytics, no crash reporting, no remote configuration, no self-updating, no server of ours anywhere. **Zero runtime dependencies** — everything it needs is Obsidian's own API.
 
@@ -67,7 +69,7 @@ The plugin will never send messages, set reactions, read chats you did not point
 ## Known limits
 
 - **Messages expire after 24 hours.** Telegram queues undelivered bot updates for one day. If Obsidian stays closed longer, the message survives only in the chat with your bot. Account mode (planned — Saved Messages sync, nothing expires) has no such limit; see [ADR-001](docs/ADR-001-bot-mode-first.md) for why bot mode ships first.
-- **Text only, for now.** Photos, voice notes and documents are counted, skipped, and reported. Attachments are planned for a later version.
+- **Files over 20 MB stay in Telegram.** The bot API refuses to serve them; the entry gets a placeholder line instead of the file. Stickers, polls and locations are counted and skipped.
 - **One poller per bot.** If desktop and phone are both open, one wins the poll and the other backs off; the note reaches it through your normal vault sync. Handled, not an error.
 - **Edits and deletions in Telegram don't touch the note.** Deliberate: the note is yours.
 

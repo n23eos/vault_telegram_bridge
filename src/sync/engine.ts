@@ -1,6 +1,8 @@
 import { HumanError, isRetryable, toHumanError } from '../errors';
+import { entitiesToMarkdown } from '../telegram/entities';
 import type { InboundMessage, MessageSource } from '../telegram/types';
 import type { Settings } from '../settings';
+import type { AttachmentSink } from '../vault/attachments';
 import { resolveDailyNotePath, type DateFormatter } from '../vault/daily-note';
 import type { NoteEntry, NoteWriter } from '../vault/writer';
 import { markerKey } from './dedupe';
@@ -24,6 +26,13 @@ export interface EngineDeps {
   persist: (patch: Partial<Settings>) => Promise<void>;
   format: DateFormatter;
   onNotice: (e: HumanError) => void;
+  /** Download-and-store for media messages. Returns the entry's attachment line. */
+  attachments: AttachmentSink;
+  /**
+   * Initial content for a note that does not exist yet — the daily-note
+   * template, rendered for the given day. `''` means create empty, as before.
+   */
+  seed: (date: Date) => Promise<string>;
 }
 
 export class SyncEngine {
@@ -103,8 +112,15 @@ export class SyncEngine {
       // the instant of the write. Doing it here, against content read a moment
       // earlier, is how a note that arrived over vault sync in between produces
       // duplicates.
-      const entries = batch.map((m) => this.toEntry(m));
-      const count = await this.deps.writer.appendEntries(path, settings.heading, entries);
+      //
+      // Attachments download *before* that dedup check, so a stale-cursor
+      // re-read re-downloads the bytes once. The deterministic file name makes
+      // that harmless — same path, already on disk, no second copy.
+      const entries: NoteEntry[] = [];
+      for (const m of batch) entries.push(await this.toEntry(m, path));
+
+      const seed = await this.deps.seed(new Date(batch[0].date * 1000));
+      const count = await this.deps.writer.appendEntries(path, settings.heading, entries, seed);
       written += count;
       duplicate += entries.length - count;
     }
@@ -129,13 +145,20 @@ export class SyncEngine {
     return groups;
   }
 
-  private toEntry(m: InboundMessage): NoteEntry {
+  private async toEntry(m: InboundMessage, notePath: string): Promise<NoteEntry> {
     const s = this.deps.settings();
     const when = new Date(m.date * 1000);
+
+    // Inside a code fence Markdown is inert, so converted `**bold**` would show
+    // its asterisks — the raw text reads better there.
+    const text = s.blockStyle === 'code' ? m.text : entitiesToMarkdown(m.text, m.entities);
+    const attachmentLine = m.attachment ? await this.deps.attachments.save(m, notePath) : undefined;
+
     const lines = renderEntry(
-      m.text,
+      text,
       { template: s.lineTemplate, blockStyle: s.blockStyle, calloutType: s.calloutType },
       { time: this.deps.format('HH:mm', when), date: this.deps.format('YYYY-MM-DD', when) },
+      attachmentLine,
     );
     return { key: markerKey(m), lines };
   }

@@ -14,11 +14,48 @@ export interface MsgRef {
   messageId: number;
 }
 
-/** A message, normalised. v0.1 carries text only; v0.2 adds attachments. */
+/**
+ * One formatting span, as Telegram reports it. `offset`/`length` are UTF-16
+ * code units — the same units JavaScript strings index by.
+ */
+export interface TgEntity {
+  type: string;
+  offset: number;
+  length: number;
+  /** Only on `text_link`. */
+  url?: string;
+  /** Only on `pre`. */
+  language?: string;
+}
+
+/** What kind of file rode along with the message. */
+export type AttachmentKind = 'photo' | 'voice' | 'audio' | 'video' | 'document';
+
+export interface TgAttachment {
+  kind: AttachmentKind;
+  /** Telegram's opaque file id, exchanged for a download path via `getFile`. */
+  fileId: string;
+  /** Original name, when Telegram preserves one (documents, audio, video). */
+  fileName?: string;
+  /** Bytes, when Telegram reports it. Used to refuse >20 MB before a doomed round-trip. */
+  fileSize?: number;
+}
+
+/** A message, normalised. For a media message `text` is the caption, possibly empty. */
 export interface InboundMessage extends MsgRef {
   /** Unix seconds, as Telegram reports it. Local-time formatting happens in the writer. */
   date: number;
   text: string;
+  /** Formatting spans over `text`. Absent means plain. */
+  entities?: TgEntity[];
+  attachment?: TgAttachment;
+}
+
+/** The bytes of one attachment, plus the extension the server path revealed. */
+export interface DownloadedFile {
+  data: ArrayBuffer;
+  /** `.jpg`, `.oga`, … — lower-case, with the dot. `''` when the server path had none. */
+  ext: string;
 }
 
 export type SourceStatus = 'disconnected' | 'connecting' | 'connected' | 'auth_required';

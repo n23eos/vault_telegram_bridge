@@ -40,6 +40,11 @@ export const en = {
 
   // --- settings: destination ---
   'settings.section.destination': 'Where messages go',
+  'settings.coreDaily.name': 'Use core Daily Notes',
+  'settings.coreDaily.desc':
+    'Write into the daily note the core Daily Notes plugin owns — its folder, note name and template. The folder and note name fields below are ignored while this is on.',
+  'settings.coreDaily.unavailable':
+    'The core Daily Notes plugin is disabled, so the folder and note name below are used until it comes back.',
   'settings.folder.name': 'Folder',
   'settings.folder.desc': 'Leave empty for the vault root.',
   'settings.folder.placeholder': 'Inbox/Telegram',
@@ -90,9 +95,12 @@ export const en = {
   // --- commands ---
   'command.syncNow': 'Sync now',
 
+  // --- entry fragments written into notes ---
+  'entry.attachmentTooBig': '*Attachment over 20 MB — the bot API refuses it; it stays in your Telegram chat.*',
+
   // --- notices ---
   'notice.synced': 'Telegram: {n} new',
-  'notice.skipped.nonText': '{n} non-text message(s) skipped — attachments arrive in a later version.',
+  'notice.skipped.nonText': '{n} unsupported message(s) skipped (stickers, polls, locations and the like).',
   'notice.skipped.foreignChat': '{n} message(s) from an unbound chat were ignored.',
   'notice.bound': 'Bot bound to this chat. Messages from other chats will be ignored.',
 
@@ -107,6 +115,7 @@ export const en = {
     'Another device is already polling this bot. That is fine: whichever device is open will sync, and the note reaches the others through vault sync.',
   'error.rateLimited': 'Telegram is rate-limiting the bot. Waiting {seconds}s.',
   'error.telegram': 'Telegram said: {message}',
+  'error.fileTooBig': 'Telegram refuses to serve files over 20 MB to bots.',
   'error.badFolder': 'The folder “{folder}” could not be used: {reason}',
   'error.badTemplate': 'The note-name format “{template}” produces an empty or invalid file name.',
   'error.noTextPlaceholder': 'The line format has no {text}, so message bodies would be dropped.',

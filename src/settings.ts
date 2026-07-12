@@ -30,7 +30,14 @@ export interface Settings {
    */
   boundChatId: string | null;
 
-  /** Vault-relative. Empty string is the vault root. */
+  /**
+   * Write into the note the core Daily Notes plugin owns — its folder, name
+   * format and template — instead of the two fields below. Falls back to them
+   * when the core plugin is disabled.
+   */
+  useCoreDailyNote: boolean;
+
+  /** Vault-relative. Empty string is the vault root. Ignored while `useCoreDailyNote` works. */
   folder: string;
 
   /** Moment.js tokens. One note per day holds that day's messages. */
@@ -66,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   version: CURRENT_SCHEMA_VERSION,
   botToken: '',
   boundChatId: null,
+  useCoreDailyNote: false,
   folder: '',
   filenameTemplate: 'YYYY-MM-DD',
   heading: '## Telegram',
@@ -144,6 +152,7 @@ function sanitize(data: Record<string, unknown>): Settings {
   if (typeof data.boundChatId === 'string' && /^-?\d+$/.test(data.boundChatId)) {
     s.boundChatId = data.boundChatId;
   }
+  if (typeof data.useCoreDailyNote === 'boolean') s.useCoreDailyNote = data.useCoreDailyNote;
   if (typeof data.folder === 'string') s.folder = stripSlashes(data.folder);
   if (typeof data.filenameTemplate === 'string' && data.filenameTemplate.trim() !== '') {
     s.filenameTemplate = data.filenameTemplate.trim();

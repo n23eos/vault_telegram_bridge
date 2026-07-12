@@ -201,19 +201,23 @@ function flatten(entries: NoteEntry[]): string[] {
 /* ------------------------------------------------------------------ */
 
 export interface NoteWriter {
-  /** Returns how many entries were actually written. Duplicates are silently dropped. */
-  appendEntries(notePath: string, heading: string, entries: NoteEntry[]): Promise<number>;
+  /**
+   * Returns how many entries were actually written. Duplicates are silently
+   * dropped. `seed` is the initial content — a rendered daily-note template —
+   * used only when the note does not exist yet.
+   */
+  appendEntries(notePath: string, heading: string, entries: NoteEntry[], seed?: string): Promise<number>;
 }
 
 export class VaultNoteWriter implements NoteWriter {
   constructor(private readonly vault: Vault) {}
 
-  async appendEntries(notePath: string, heading: string, entries: NoteEntry[]): Promise<number> {
+  async appendEntries(notePath: string, heading: string, entries: NoteEntry[], seed = ''): Promise<number> {
     if (entries.length === 0) return 0;
     const path = normalizePath(notePath);
 
     try {
-      const file = await this.ensureNote(path);
+      const file = await this.ensureNote(path, seed);
       let written = 0;
       await this.vault.process(file, (data) => {
         const result = applyEntries(data, heading, entries);
@@ -227,18 +231,19 @@ export class VaultNoteWriter implements NoteWriter {
   }
 
   /**
-   * Creates the note empty. The frontmatter, tag and heading are added by
-   * `applyEntries` inside `Vault.process`, so there is exactly one place that
-   * decides what a note looks like.
+   * Creates the note with `seed` (the rendered daily-note template, or `''`).
+   * The frontmatter, tag and heading are still added by `applyEntries` inside
+   * `Vault.process`, so there is exactly one place that decides what an entry
+   * looks like — the seed only decides what the rest of a fresh note holds.
    */
-  private async ensureNote(path: string): Promise<TFile> {
+  private async ensureNote(path: string, seed: string): Promise<TFile> {
     const existing = this.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) return existing;
 
     await this.ensureFolder(parentFolderOf(path));
 
     try {
-      return await this.vault.create(path, '');
+      return await this.vault.create(path, seed);
     } catch (e) {
       // Another device's sync, or our own previous tick, created it in the gap
       // between the lookup and the create. That is a success, not a failure.

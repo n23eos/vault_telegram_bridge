@@ -18,8 +18,9 @@ const fmt = (template: string, date: Date): string =>
 /** In-memory vault running the real `applyEntries`, so dedupe is exercised end to end. */
 class FakeWriter {
   notes = new Map<string, string>();
-  async appendEntries(path: string, heading: string, entries: NoteEntry[]): Promise<number> {
-    const { content, written } = applyEntries(this.notes.get(path) ?? '', heading, entries);
+  async appendEntries(path: string, heading: string, entries: NoteEntry[], seed = ''): Promise<number> {
+    const base = this.notes.get(path) ?? seed;
+    const { content, written } = applyEntries(base, heading, entries);
     this.notes.set(path, content);
     return written;
   }
@@ -65,7 +66,11 @@ const T = Date.UTC(2026, 6, 8, 9, 12) / 1000;
 
 const message = (messageId: number, text: string, date = T) => ({ chatId: '555', messageId, date, text });
 
-function build(results: Array<PollResult | Error>, overrides: Partial<Settings> = {}) {
+function build(
+  results: Array<PollResult | Error>,
+  overrides: Partial<Settings> = {},
+  hooks: { save?: (m: unknown, notePath: string) => Promise<string>; seed?: (date: Date) => Promise<string> } = {},
+) {
   const settings: Settings = { ...DEFAULT_SETTINGS, botToken: '123456:x', ...overrides };
   const writer = new FakeWriter();
   const source = new FakeSource(results);
@@ -79,6 +84,8 @@ function build(results: Array<PollResult | Error>, overrides: Partial<Settings> 
     },
     format: fmt,
     onNotice,
+    attachments: { save: hooks.save ?? (async () => '![[unexpected-attachment]]') },
+    seed: hooks.seed ?? (async () => ''),
   });
   return { engine, writer, source, settings, onNotice };
 }
@@ -353,5 +360,106 @@ describe('SyncEngine — reentrancy', () => {
       written: 0,
       skipped: { nonText: 0, foreignChat: 0, duplicate: 0 },
     });
+  });
+});
+
+describe('SyncEngine — attachments', () => {
+  const withPhoto = (messageId: number, text: string) => ({
+    chatId: '555',
+    messageId,
+    date: T,
+    text,
+    attachment: { kind: 'photo' as const, fileId: 'f1' },
+  });
+
+  it('appends the line the attachment sink returns', async () => {
+    const { engine, writer } = build([result([withPhoto(1, 'sunset')], 2)], {}, {
+      save: async () => '![[Files/TG-42.jpg]]',
+    });
+    await engine.run('manual');
+    expect(writer.body('2026-07-08.md')).toBe('## Telegram\n\n**09:12** sunset\n![[Files/TG-42.jpg]]\n');
+  });
+
+  it('hands the sink the message and the destination note path', async () => {
+    const seen: string[] = [];
+    const { engine } = build([result([withPhoto(1, '')], 2)], { folder: 'Inbox' }, {
+      save: async (_m, notePath) => {
+        seen.push(notePath);
+        return '![[x.jpg]]';
+      },
+    });
+    await engine.run('manual');
+    expect(seen).toEqual(['Inbox/2026-07-08.md']);
+  });
+
+  it('does not advance the cursor when a download fails — the message must be retried', async () => {
+    const { engine, settings } = build([result([withPhoto(1, '')], 42)], { cursor: 7 }, {
+      save: async () => {
+        throw new Error('network died mid-download');
+      },
+    });
+    await engine.run('manual');
+    expect(settings.cursor).toBe(7);
+  });
+
+  it('converts entities to Markdown on the way in', async () => {
+    const m = {
+      chatId: '555',
+      messageId: 1,
+      date: T,
+      text: 'bold text',
+      entities: [{ type: 'bold', offset: 0, length: 4 }],
+    };
+    const { engine, writer } = build([result([m], 2)]);
+    await engine.run('manual');
+    expect(writer.body('2026-07-08.md')).toContain('**bold** text');
+  });
+
+  it('keeps the raw text in code block style, where Markdown is inert', async () => {
+    const m = {
+      chatId: '555',
+      messageId: 1,
+      date: T,
+      text: 'bold text',
+      entities: [{ type: 'bold', offset: 0, length: 4 }],
+    };
+    const { engine, writer } = build([result([m], 2)], { blockStyle: 'code', lineTemplate: '{time} {text}' });
+    await engine.run('manual');
+    expect(writer.body('2026-07-08.md')).toContain('bold text');
+    expect(writer.body('2026-07-08.md')).not.toContain('**bold**');
+  });
+});
+
+describe('SyncEngine — note seeding', () => {
+  it('seeds a brand-new note with the template content', async () => {
+    const { engine, writer } = build([result([message(1, 'hi')], 2)], {}, {
+      seed: async () => '# 2026-07-08\n\ndaily template body\n',
+    });
+    await engine.run('manual');
+    const body = writer.body('2026-07-08.md');
+    expect(body).toContain('daily template body');
+    expect(body).toContain('## Telegram\n\n**09:12** hi');
+  });
+
+  it('never seeds an existing note', async () => {
+    const { engine, writer } = build([result([message(1, 'hi')], 2)], {}, {
+      seed: async () => 'TEMPLATE',
+    });
+    writer.notes.set('2026-07-08.md', '# already here\n');
+    await engine.run('manual');
+    expect(writer.notes.get('2026-07-08.md')).not.toContain('TEMPLATE');
+  });
+
+  it('seeds with the date of the messages, not today', async () => {
+    const seen: Date[] = [];
+    const yesterday = Date.UTC(2026, 6, 7, 22, 0) / 1000;
+    const { engine } = build([result([message(1, 'x', yesterday)], 2)], {}, {
+      seed: async (d) => {
+        seen.push(d);
+        return '';
+      },
+    });
+    await engine.run('manual');
+    expect(seen[0].getTime()).toBe(yesterday * 1000);
   });
 });

@@ -91,3 +91,89 @@ describe('parseUpdates — content', () => {
     expect(r.cursor).toBe(2);
   });
 });
+
+describe('parseUpdates — attachments', () => {
+  const media = (updateId: number, messageId: number, fields: Record<string, unknown>) => ({
+    update_id: updateId,
+    message: { message_id: messageId, date: 1_700_000_000, chat: { id: 555 }, ...fields },
+  });
+
+  it('turns a photo with a caption into a message with an attachment', () => {
+    const r = parseUpdates(
+      [
+        media(1, 10, {
+          caption: 'sunset',
+          photo: [
+            { file_id: 'small', file_size: 100, width: 90, height: 60 },
+            { file_id: 'big', file_size: 900, width: 900, height: 600 },
+          ],
+        }),
+      ],
+      '555',
+    );
+    expect(r.skipped.nonText).toBe(0);
+    expect(r.messages[0].text).toBe('sunset');
+    expect(r.messages[0].attachment).toEqual({ kind: 'photo', fileId: 'big', fileSize: 900 });
+  });
+
+  it('keeps a captionless photo — the embed is the content', () => {
+    const r = parseUpdates([media(1, 10, { photo: [{ file_id: 'p', width: 1, height: 1 }] })], '555');
+    expect(r.messages).toHaveLength(1);
+    expect(r.messages[0].text).toBe('');
+  });
+
+  it('carries caption_entities as the message entities', () => {
+    const r = parseUpdates(
+      [media(1, 10, { caption: 'bold cap', caption_entities: [{ type: 'bold', offset: 0, length: 4 }], photo: [{ file_id: 'p', width: 1, height: 1 }] })],
+      '555',
+    );
+    expect(r.messages[0].entities).toEqual([{ type: 'bold', offset: 0, length: 4 }]);
+  });
+
+  it('takes a document’s original file name', () => {
+    const r = parseUpdates(
+      [media(1, 10, { document: { file_id: 'd', file_name: 'report.pdf', file_size: 5 } })],
+      '555',
+    );
+    expect(r.messages[0].attachment).toEqual({ kind: 'document', fileId: 'd', fileName: 'report.pdf', fileSize: 5 });
+  });
+
+  it('classifies an animation as its own kind, not as its legacy document twin', () => {
+    const r = parseUpdates(
+      [media(1, 10, { animation: { file_id: 'a' }, document: { file_id: 'a-doc' } })],
+      '555',
+    );
+    expect(r.messages[0].attachment?.fileId).toBe('a');
+  });
+
+  it('maps voice, audio, video and video_note', () => {
+    const kinds = [
+      { fields: { voice: { file_id: 'v' } }, kind: 'voice' },
+      { fields: { audio: { file_id: 'a' } }, kind: 'audio' },
+      { fields: { video: { file_id: 'vd' } }, kind: 'video' },
+      { fields: { video_note: { file_id: 'vn' } }, kind: 'video' },
+    ];
+    for (const k of kinds) {
+      const r = parseUpdates([media(1, 10, k.fields)], '555');
+      expect(r.messages[0].attachment?.kind).toBe(k.kind);
+    }
+  });
+
+  it('still skips stickers, polls and the like', () => {
+    const r = parseUpdates(
+      [media(1, 10, { sticker: { file_id: 's' } }), media(2, 11, { poll: { id: 'p' } })],
+      '555',
+    );
+    expect(r.messages).toHaveLength(0);
+    expect(r.skipped.nonText).toBe(2);
+    expect(r.cursor).toBe(3);
+  });
+
+  it('carries text entities on a plain text message', () => {
+    const r = parseUpdates(
+      [media(1, 10, { text: 'bold text', entities: [{ type: 'bold', offset: 0, length: 4 }] })],
+      '555',
+    );
+    expect(r.messages[0].entities).toEqual([{ type: 'bold', offset: 0, length: 4 }]);
+  });
+});

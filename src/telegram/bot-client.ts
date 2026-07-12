@@ -1,5 +1,6 @@
 import { requestUrl, type RequestUrlResponse } from 'obsidian';
 import {
+  errFileTooBig,
   errInvalidToken,
   errNetwork,
   errNoToken,
@@ -10,7 +11,17 @@ import {
 } from '../errors';
 import { looksLikeBotToken } from '../settings';
 import { classifyStatus, FloodPolicy, realDeps } from './flood';
-import type { InboundMessage, MessageSource, PollResult, SourceIdentity, SourceStatus } from './types';
+import type {
+  AttachmentKind,
+  DownloadedFile,
+  InboundMessage,
+  MessageSource,
+  PollResult,
+  SourceIdentity,
+  SourceStatus,
+  TgAttachment,
+  TgEntity,
+} from './types';
 
 /**
  * Telegram Bot API client. TZ §1: network goes through `requestUrl`, never
@@ -48,11 +59,34 @@ interface TgUpdate {
   message?: TgMessage;
 }
 
+interface TgFileRef {
+  file_id: string;
+  file_name?: string;
+  file_size?: number;
+}
+
 interface TgMessage {
   message_id: number;
   date: number;
   chat: { id: number };
   text?: string;
+  entities?: TgEntity[];
+  caption?: string;
+  caption_entities?: TgEntity[];
+  photo?: Array<TgFileRef & { width: number; height: number }>;
+  voice?: TgFileRef;
+  audio?: TgFileRef;
+  video?: TgFileRef;
+  video_note?: TgFileRef;
+  animation?: TgFileRef;
+  document?: TgFileRef;
+}
+
+/** `getFile` result. `file_path` is what the download URL wants. */
+interface TgFile {
+  file_id: string;
+  file_size?: number;
+  file_path?: string;
 }
 
 interface TgUser {
@@ -111,18 +145,59 @@ export function parseUpdates(updates: TgUpdate[], boundChatId: string | null): P
       continue;
     }
 
-    const text = typeof m.text === 'string' ? m.text : '';
-    if (text.trim() === '') {
-      // Photos, voice notes, documents, stickers, service messages. v0.2 handles
-      // these; v0.1 counts them so the user is told rather than left wondering.
+    const attachment = pickAttachment(m);
+    const text = typeof m.text === 'string' ? m.text : typeof m.caption === 'string' ? m.caption : '';
+    if (!attachment && text.trim() === '') {
+      // Stickers, polls, locations, contacts, service messages — nothing to
+      // write and nothing to download. Counted so the user is told rather than
+      // left wondering.
       skipped.nonText++;
       continue;
     }
 
-    messages.push({ chatId, messageId: m.message_id, date: m.date, text });
+    const entities = m.entities ?? m.caption_entities;
+    messages.push({
+      chatId,
+      messageId: m.message_id,
+      date: m.date,
+      text,
+      ...(entities && entities.length > 0 ? { entities } : {}),
+      ...(attachment ? { attachment } : {}),
+    });
   }
 
   return { messages, cursor, skipped, newBinding };
+}
+
+/**
+ * The one file worth keeping from a media message. Order matters in exactly one
+ * place: an animation legacy-mirrors itself into `document`, so `animation` is
+ * checked first or every GIF arrives twice-named.
+ */
+function pickAttachment(m: TgMessage): TgAttachment | undefined {
+  if (m.photo && m.photo.length > 0) {
+    // Telegram sends every thumbnail size; the last entry is the original.
+    const p = m.photo[m.photo.length - 1];
+    return { kind: 'photo', fileId: p.file_id, ...(p.file_size !== undefined ? { fileSize: p.file_size } : {}) };
+  }
+  const kinds: Array<[TgFileRef | undefined, AttachmentKind]> = [
+    [m.voice, 'voice'],
+    [m.audio, 'audio'],
+    [m.video, 'video'],
+    [m.video_note, 'video'],
+    [m.animation, 'video'],
+    [m.document, 'document'],
+  ];
+  for (const [ref, kind] of kinds) {
+    if (!ref) continue;
+    return {
+      kind,
+      fileId: ref.file_id,
+      ...(ref.file_name !== undefined ? { fileName: ref.file_name } : {}),
+      ...(ref.file_size !== undefined ? { fileSize: ref.file_size } : {}),
+    };
+  }
+  return undefined;
 }
 
 /* ------------------------------------------------------------------ */
@@ -192,6 +267,39 @@ export class BotClient implements MessageSource {
     this.state = 'connected';
 
     return { messages: parsed.messages, cursor: parsed.cursor, skipped: parsed.skipped };
+  }
+
+  /**
+   * Fetch one attachment's bytes. Two calls: `getFile` exchanges the id for a
+   * server path, then the path is fetched from the file endpoint. Telegram
+   * refuses both for files over 20 MB — that surfaces as `errFileTooBig`, which
+   * the caller turns into a placeholder line rather than a failed sync.
+   */
+  async download(fileId: string): Promise<DownloadedFile> {
+    let file: TgFile;
+    try {
+      file = await this.call<TgFile>('getFile', { file_id: fileId });
+    } catch (e) {
+      if (e instanceof HumanError && e.key === 'error.telegram' && /too big/i.test(String(e.params?.message ?? ''))) {
+        throw errFileTooBig();
+      }
+      throw e;
+    }
+    // A missing path is the other way Telegram says "not serving this".
+    if (!file.file_path) throw errFileTooBig();
+
+    let res: RequestUrlResponse;
+    try {
+      res = await requestUrl({
+        url: `${API_BASE}/file/bot${this.opts.getToken()}/${file.file_path}`,
+        throw: false,
+      });
+    } catch (e) {
+      throw navigator.onLine ? errNetwork(e) : errOffline();
+    }
+    if (res.status >= 400) throw errTelegram(`file download HTTP ${res.status}`);
+
+    return { data: res.arrayBuffer, ext: extOf(file.file_path) };
   }
 
   async disconnect(): Promise<void> {
@@ -264,6 +372,13 @@ export class BotClient implements MessageSource {
 
 function empty(): PollResult {
   return { messages: [], cursor: undefined, skipped: { nonText: 0, foreignChat: 0 } };
+}
+
+/** `photos/file_7.jpg` → `.jpg`. `''` when the server path has no extension. */
+function extOf(path: string): string {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const dot = name.lastIndexOf('.');
+  return dot <= 0 ? '' : name.slice(dot).toLowerCase();
 }
 
 /** Telegram rejects `offset: null`; omit the key instead. */

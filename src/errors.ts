@@ -54,6 +54,7 @@ export const errOffline = () => new HumanError('error.offline');
 export const errConflict = () => new HumanError('error.conflict');
 export const errRateLimited = (seconds: number) => new HumanError('error.rateLimited', { seconds });
 export const errTelegram = (message: string) => new HumanError('error.telegram', { message });
+export const errFileTooBig = () => new HumanError('error.fileTooBig');
 export const errBadTemplate = (template: string) => new HumanError('error.badTemplate', { template });
 export const errWriteFailed = (path: string, reason: string) =>
   new HumanError('error.writeFailed', { path, reason });

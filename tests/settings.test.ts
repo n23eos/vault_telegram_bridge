@@ -32,6 +32,7 @@ describe('migrate', () => {
       version: CURRENT_SCHEMA_VERSION,
       botToken: '123456:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
       boundChatId: '-100123',
+      useCoreDailyNote: true,
       folder: 'Inbox',
       filenameTemplate: 'YYYY-MM-DD',
       heading: '## TG',
@@ -176,5 +177,19 @@ describe('looksLikeBotToken', () => {
     expect(looksLikeBotToken('123:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw')).toBe(false); // bot id too short
     expect(looksLikeBotToken('123456789 AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw')).toBe(false); // space, not colon
     expect(looksLikeBotToken('https://api.telegram.org/bot123:abc')).toBe(false);
+  });
+});
+
+describe('useCoreDailyNote', () => {
+  it('defaults to off', () => {
+    expect(migrate(null).useCoreDailyNote).toBe(false);
+  });
+
+  it('round-trips a stored true', () => {
+    expect(migrate({ version: 2, useCoreDailyNote: true }).useCoreDailyNote).toBe(true);
+  });
+
+  it('degrades garbage to off', () => {
+    expect(migrate({ version: 2, useCoreDailyNote: 'yes' }).useCoreDailyNote).toBe(false);
   });
 });
