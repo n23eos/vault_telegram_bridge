@@ -104,10 +104,14 @@ function renderIds(ids: Iterable<string>): string[] {
  * Returns `content` with `tg_ids` set to `ids`, creating frontmatter if absent.
  * Every other frontmatter line is preserved exactly.
  *
- * A new note is also tagged `tg-bridge`, so the day-notes are findable and a
- * Dataview query can collect them. An existing note's tags are never touched.
+ * A note the plugin itself creates is also tagged `tg-bridge`, so the
+ * day-notes are findable and a Dataview query can collect them. `ensureTag`
+ * carries that fact in: it is true only for a note this write created —
+ * including one seeded from a daily-note template whose own frontmatter would
+ * otherwise silently swallow the tag. An existing note's tags are never
+ * touched.
  */
-export function writeSyncedIds(content: string, ids: Iterable<string>): string {
+export function writeSyncedIds(content: string, ids: Iterable<string>, ensureTag = false): string {
   const idList = [...ids];
   const fm = parse(content);
 
@@ -116,7 +120,7 @@ export function writeSyncedIds(content: string, ids: Iterable<string>): string {
     return `${header.join('\n')}\n${content}`;
   }
 
-  const kept: string[] = [];
+  let kept: string[] = [];
   for (let i = 0; i < fm.lines.length; i++) {
     if (isKeyLine(fm.lines[i], SYNCED_IDS_KEY)) {
       // Skip the key and whatever block hangs off it.
@@ -131,8 +135,53 @@ export function writeSyncedIds(content: string, ids: Iterable<string>): string {
   // Drop blank lines that the removal left at the end of the block.
   while (kept.length > 0 && kept[kept.length - 1].trim() === '') kept.pop();
 
+  if (ensureTag && !hasTag(kept, DEFAULT_TAG)) kept = withTag(kept, DEFAULT_TAG);
+
   const body = content.split('\n').slice(fm.bodyStart);
   return ['---', ...kept, ...renderIds(idList), '---', ...body].join('\n');
+}
+
+/** Whether the `tags` key already carries `tag`, in any of the three YAML shapes. */
+function hasTag(lines: string[], tag: string): boolean {
+  for (let i = 0; i < lines.length; i++) {
+    if (!isKeyLine(lines[i], 'tags')) continue;
+
+    const rest = lines[i].slice(lines[i].indexOf(':') + 1);
+    const flow = parseFlowList(rest);
+    if (flow) return flow.includes(tag);
+    if (rest.trim() !== '') return rest.trim().replace(/^["']|["']$/g, '') === tag;
+
+    for (let j = i + 1; j < lines.length && isContinuation(lines[j]); j++) {
+      const m = ITEM.exec(lines[j]);
+      if ((m?.[1] ?? m?.[2] ?? m?.[3]) === tag) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/** `lines` with `tag` added to the `tags` key — extending whichever shape exists, creating the key if none does. */
+function withTag(lines: string[], tag: string): string[] {
+  for (let i = 0; i < lines.length; i++) {
+    if (!isKeyLine(lines[i], 'tags')) continue;
+
+    const rest = lines[i].slice(lines[i].indexOf(':') + 1);
+    const flow = parseFlowList(rest);
+    if (flow) {
+      const next = [...lines];
+      next[i] = `tags: [${[...flow, tag].join(', ')}]`;
+      return next;
+    }
+    if (rest.trim() !== '') {
+      // A scalar value becomes a two-item block list; the original value survives verbatim.
+      return [...lines.slice(0, i), 'tags:', `  - ${rest.trim()}`, `  - ${tag}`, ...lines.slice(i + 1)];
+    }
+
+    let j = i + 1;
+    while (j < lines.length && isContinuation(lines[j])) j++;
+    return [...lines.slice(0, j), `  - ${tag}`, ...lines.slice(j)];
+  }
+  return [...lines, 'tags:', `  - ${tag}`];
 }
 
 /** Where the body begins, so callers can operate on it without the frontmatter. */

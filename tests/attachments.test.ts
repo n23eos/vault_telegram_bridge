@@ -47,3 +47,15 @@ describe('embedLine', () => {
     expect(embedLine('Files/TG-2026-07-08-42.jpg')).toBe('![[Files/TG-2026-07-08-42.jpg]]');
   });
 });
+
+describe('attachmentFileName — hidden files (review fix)', () => {
+  it('strips leading dots so ".env" does not become a hidden file', () => {
+    const m = msg({ kind: 'document', fileId: 'f1', fileName: '.env' });
+    expect(attachmentFileName(m, '2026-07-08', '')).toBe('env TG-42');
+  });
+
+  it('strips leading dots from ".gitignore" too', () => {
+    const m = msg({ kind: 'document', fileId: 'f1', fileName: '.gitignore' });
+    expect(attachmentFileName(m, '2026-07-08', '')).toBe('gitignore TG-42');
+  });
+});

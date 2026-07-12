@@ -42,7 +42,7 @@ export const en = {
   'settings.section.destination': 'Where messages go',
   'settings.coreDaily.name': 'Use core Daily Notes',
   'settings.coreDaily.desc':
-    'Write into the daily note the core Daily Notes plugin owns — its folder, note name and template. The folder and note name fields below are ignored while this is on.',
+    'Write into the daily note the core Daily Notes plugin owns — its folder, note name and template. The folder and note name fields are hidden while this is on; the heading still applies.',
   'settings.coreDaily.unavailable':
     'The core Daily Notes plugin is disabled, so the folder and note name below are used until it comes back.',
   'settings.folder.name': 'Folder',
@@ -97,6 +97,7 @@ export const en = {
 
   // --- entry fragments written into notes ---
   'entry.attachmentTooBig': '*Attachment over 20 MB — the bot API refuses it; it stays in your Telegram chat.*',
+  'entry.attachmentFailed': '*Attachment could not be downloaded — it stays in your Telegram chat.*',
 
   // --- notices ---
   'notice.synced': 'Telegram: {n} new',

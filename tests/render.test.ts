@@ -228,3 +228,51 @@ describe('renderEntry — attachment line', () => {
     expect(renderEntry('cap', opts, ctx, embed)).toEqual(['```', '15:29 cap', '```', embed]);
   });
 });
+
+describe('sanitizeInline — code-aware (review fix)', () => {
+  it('leaves an inline code span alone: Markdown is inert there', () => {
+    expect(sanitizeInline('run `kubectl 50%% off` now')).toBe('run `kubectl 50%% off` now');
+  });
+
+  it('still sanitises outside the span on the same line', () => {
+    const out = sanitizeInline('50%% off `50%% code`');
+    expect(out).toContain(`50%${ZWSP}% off`);
+    expect(out).toContain('`50%% code`');
+  });
+
+  it('handles double-backtick spans', () => {
+    expect(sanitizeInline('a `` `x%%y` `` b')).toBe('a `` `x%%y` `` b');
+  });
+
+  it('leaves fenced block lines untouched', () => {
+    const text = 'before %%\n```\n<!-- inside -->\n50%% off\n```\nafter %%';
+    const out = sanitizeInline(text);
+    expect(out.split('\n')[2]).toBe('<!-- inside -->');
+    expect(out.split('\n')[3]).toBe('50%% off');
+    expect(out.split('\n')[0]).toContain(ZWSP);
+    expect(out.split('\n')[5]).toContain(ZWSP);
+  });
+
+  it('is still idempotent with spans present', () => {
+    const s = '100%% off `code%%` and ```';
+    expect(sanitizeInline(sanitizeInline(s))).toBe(sanitizeInline(s));
+  });
+});
+
+describe('renderEntry — trailing blank lines (review fix)', () => {
+  it('trims trailing blank lines a pre-entity conversion leaves behind', () => {
+    const converted = 'look:\n\n```js\nconst a = 1;\n```\n';
+    const out = renderEntry(converted, opts(), ctx);
+    expect(out[out.length - 1]).toBe('```');
+  });
+
+  it('keeps the attachment line attached after a trailing-blank trim', () => {
+    const out = renderEntry('x\n\n', opts(), ctx, '![[f.jpg]]');
+    expect(out).toEqual(['**15:29** x', '![[f.jpg]]']);
+  });
+
+  it('produces no stray ">" at the end of a callout', () => {
+    const out = renderEntry('x\n\n', opts({ blockStyle: 'callout' }), ctx);
+    expect(out[out.length - 1]).toBe('> **15:29** x');
+  });
+});

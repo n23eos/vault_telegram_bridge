@@ -13,10 +13,10 @@ import { looksLikeBotToken } from '../settings';
 import { classifyStatus, FloodPolicy, realDeps } from './flood';
 import type {
   AttachmentKind,
-  DownloadedFile,
   InboundMessage,
   MessageSource,
   PollResult,
+  ResolvedFile,
   SourceIdentity,
   SourceStatus,
   TgAttachment,
@@ -270,12 +270,12 @@ export class BotClient implements MessageSource {
   }
 
   /**
-   * Fetch one attachment's bytes. Two calls: `getFile` exchanges the id for a
-   * server path, then the path is fetched from the file endpoint. Telegram
-   * refuses both for files over 20 MB — that surfaces as `errFileTooBig`, which
-   * the caller turns into a placeholder line rather than a failed sync.
+   * `getFile`: exchange an attachment's id for the server path the file
+   * endpoint wants. Telegram refuses files over 20 MB here — that surfaces as
+   * `errFileTooBig`, which the caller turns into a placeholder line rather
+   * than a failed sync.
    */
-  async download(fileId: string): Promise<DownloadedFile> {
+  async resolveFile(fileId: string): Promise<ResolvedFile> {
     let file: TgFile;
     try {
       file = await this.call<TgFile>('getFile', { file_id: fileId });
@@ -287,19 +287,47 @@ export class BotClient implements MessageSource {
     }
     // A missing path is the other way Telegram says "not serving this".
     if (!file.file_path) throw errFileTooBig();
+    return { filePath: file.file_path, ext: extOf(file.file_path) };
+  }
 
-    let res: RequestUrlResponse;
-    try {
-      res = await requestUrl({
-        url: `${API_BASE}/file/bot${this.opts.getToken()}/${file.file_path}`,
-        throw: false,
-      });
-    } catch (e) {
-      throw navigator.onLine ? errNetwork(e) : errOffline();
+  /**
+   * The byte transfer, under the same flood policy as every other call: gated
+   * to the request floor, a 429 honoured and retried, a 409 backed off. Without
+   * this, a burst of forwarded photos turns Telegram's rate limit into a
+   * user-facing "sync failed".
+   */
+  async fetchFile(filePath: string): Promise<ArrayBuffer> {
+    const maxAttempts = 3;
+
+    for (let attempt = 1; ; attempt++) {
+      if (!navigator.onLine) throw errOffline();
+      await this.flood.gate();
+
+      let res: RequestUrlResponse;
+      try {
+        res = await requestUrl({
+          url: `${API_BASE}/file/bot${this.opts.getToken()}/${filePath}`,
+          throw: false,
+        });
+      } catch (e) {
+        throw navigator.onLine ? errNetwork(e) : errOffline();
+      }
+
+      const throttle = classifyStatus(res.status, safeJson<TgResponse<unknown>>(res));
+      if (throttle) {
+        if (attempt >= maxAttempts) throw throttle;
+        if (throttle.key === 'error.rateLimited') {
+          await this.flood.waitForRateLimit(Number(throttle.params?.seconds ?? 1));
+        } else {
+          await this.flood.waitForConflict();
+        }
+        continue;
+      }
+      if (res.status >= 400) throw errTelegram(`file download HTTP ${res.status}`);
+
+      this.flood.succeeded();
+      return res.arrayBuffer;
     }
-    if (res.status >= 400) throw errTelegram(`file download HTTP ${res.status}`);
-
-    return { data: res.arrayBuffer, ext: extOf(file.file_path) };
   }
 
   async disconnect(): Promise<void> {

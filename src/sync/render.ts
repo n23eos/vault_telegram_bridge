@@ -37,11 +37,48 @@ export interface RenderContext {
  * both behave: after one pass no `%` is followed by `%`, so a second pass is a
  * no-op.
  *
- * Not applied inside a code block, where Markdown is inert and mangling the
- * user's text would be gratuitous. See `wrapCode` for that case's own hazard.
+ * Code is exempt at every level: the whole-entry `code` block style (see
+ * `wrapCode`), fenced blocks inside the text, and inline backtick spans.
+ * Markdown is inert there, `%%` never opens a comment — and a zero-width space
+ * planted inside a code span survives a copy-paste into a terminal, which is
+ * strictly worse than the hazard it would be neutralising.
  */
 export function sanitizeInline(text: string): string {
-  return text
+  const out: string[] = [];
+  let fence: { char: string; length: number } | null = null;
+
+  for (const line of text.split('\n')) {
+    const run = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (run && run[1][0] === fence.char && run[1].length >= fence.length) fence = null;
+      out.push(line);
+    } else if (run) {
+      fence = { char: run[1][0], length: run[1].length };
+      out.push(line);
+    } else {
+      out.push(sanitizeLine(line));
+    }
+  }
+  return out.join('\n');
+}
+
+/** An inline code span: a backtick run, content, a matching run not extended by a further backtick. */
+const CODE_SPAN = /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g;
+
+function sanitizeLine(line: string): string {
+  let out = '';
+  let pos = 0;
+  CODE_SPAN.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = CODE_SPAN.exec(line)) !== null) {
+    out += sanitizeSegment(line.slice(pos, m.index)) + m[0];
+    pos = m.index + m[0].length;
+  }
+  return out + sanitizeSegment(line.slice(pos));
+}
+
+function sanitizeSegment(segment: string): string {
+  return segment
     .replace(/%(?=%)/g, `%${ZWSP}`)
     .replace(/--(?=>)/g, `--${ZWSP}`)
     .replace(/<!(?=--)/g, `<!${ZWSP}`);
@@ -69,10 +106,15 @@ function applyTemplate(template: string, ctx: RenderContext, firstLine: string):
 /**
  * The first line of the message goes through the template; the rest follow it
  * verbatim, so a multi-line message stays one entry with one timestamp.
+ *
+ * Trailing blank lines are dropped — entity conversion can leave one behind a
+ * closing fence, and renderEntry promises never to end on a blank.
  */
 function templated(text: string, opts: RenderOptions, ctx: RenderContext): string[] {
   const [first = '', ...rest] = text.split('\n');
-  return [applyTemplate(opts.template, ctx, first), ...rest.map((l) => l.trimEnd())];
+  const lines = [applyTemplate(opts.template, ctx, first), ...rest.map((l) => l.trimEnd())];
+  while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  return lines;
 }
 
 function wrapCode(lines: string[], text: string): string[] {

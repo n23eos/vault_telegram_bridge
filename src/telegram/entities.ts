@@ -57,7 +57,7 @@ function wrap(inner: string, e: TgEntity): string {
     case 'pre':
       return preBlock(inner, e.language);
     case 'text_link':
-      return e.url ? `[${inner}](${e.url})` : inner;
+      return e.url ? markdownLink(inner, e.url) : inner;
     case 'blockquote':
     case 'expandable_blockquote':
       return inner
@@ -69,6 +69,18 @@ function wrap(inner: string, e: TgEntity): string {
       // — either already legible as plain text or without a Markdown equivalent.
       return inner;
   }
+}
+
+/**
+ * A `]` in the text or a `(`/`)`/space in the URL terminates a Markdown link
+ * early and loses the URL — the exact loss this conversion exists to prevent.
+ * The text escapes its brackets; the URL percent-escapes the three offenders,
+ * which every server decodes back to the same resource.
+ */
+function markdownLink(inner: string, url: string): string {
+  const safeText = inner.replace(/\]/g, '\\]');
+  const safeUrl = url.replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/ /g, '%20');
+  return `[${safeText}](${safeUrl})`;
 }
 
 /**

@@ -168,8 +168,16 @@ export interface ApplyResult {
  * so a note written by an earlier version is recognised and never re-synced.
  * Only frontmatter is written; the old markers are left where they are rather
  * than rewriting the user's body to satisfy our bookkeeping.
+ *
+ * `ensureTag` is true when this write created the note — the `tg-bridge` tag
+ * must land even when a seed template brought frontmatter of its own.
  */
-export function applyEntries(content: string, heading: string, entries: NoteEntry[]): ApplyResult {
+export function applyEntries(
+  content: string,
+  heading: string,
+  entries: NoteEntry[],
+  ensureTag = false,
+): ApplyResult {
   const recorded = readSyncedIds(content);
   const seen = new Set([...recorded, ...extractMarkers(content)]);
 
@@ -183,7 +191,7 @@ export function applyEntries(content: string, heading: string, entries: NoteEntr
 
   const withBody = insertUnderHeading(content, heading, flatten(fresh));
   const ids = [...recorded, ...fresh.map((e) => e.key)];
-  return { content: writeSyncedIds(withBody, ids), written: fresh.length };
+  return { content: writeSyncedIds(withBody, ids, ensureTag), written: fresh.length };
 }
 
 /** Entries, separated by one blank line. */
@@ -217,10 +225,10 @@ export class VaultNoteWriter implements NoteWriter {
     const path = normalizePath(notePath);
 
     try {
-      const file = await this.ensureNote(path, seed);
+      const { file, created } = await this.ensureNote(path, seed);
       let written = 0;
       await this.vault.process(file, (data) => {
-        const result = applyEntries(data, heading, entries);
+        const result = applyEntries(data, heading, entries, created);
         written = result.written;
         return result.content;
       });
@@ -236,19 +244,19 @@ export class VaultNoteWriter implements NoteWriter {
    * `Vault.process`, so there is exactly one place that decides what an entry
    * looks like — the seed only decides what the rest of a fresh note holds.
    */
-  private async ensureNote(path: string, seed: string): Promise<TFile> {
+  private async ensureNote(path: string, seed: string): Promise<{ file: TFile; created: boolean }> {
     const existing = this.vault.getAbstractFileByPath(path);
-    if (existing instanceof TFile) return existing;
+    if (existing instanceof TFile) return { file: existing, created: false };
 
     await this.ensureFolder(parentFolderOf(path));
 
     try {
-      return await this.vault.create(path, seed);
+      return { file: await this.vault.create(path, seed), created: true };
     } catch (e) {
       // Another device's sync, or our own previous tick, created it in the gap
       // between the lookup and the create. That is a success, not a failure.
       const raced = this.vault.getAbstractFileByPath(path);
-      if (raced instanceof TFile) return raced;
+      if (raced instanceof TFile) return { file: raced, created: false };
       throw e;
     }
   }

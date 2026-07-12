@@ -100,3 +100,23 @@ describe('entitiesToMarkdown — edges', () => {
     expect(r).toBe('**abcde**fgh');
   });
 });
+
+describe('entitiesToMarkdown — text_link escaping (review fix)', () => {
+  it('escapes ] in the link text', () => {
+    expect(entitiesToMarkdown('see 1] now', [e('text_link', 4, 2, { url: 'https://x.dev' })])).toBe(
+      'see [1\\]](https://x.dev) now',
+    );
+  });
+
+  it('percent-escapes parentheses in the URL', () => {
+    expect(entitiesToMarkdown('wiki', [e('text_link', 0, 4, { url: 'https://x.dev/foo(1)' })])).toBe(
+      '[wiki](https://x.dev/foo%281%29)',
+    );
+  });
+
+  it('percent-escapes spaces in the URL', () => {
+    expect(entitiesToMarkdown('doc', [e('text_link', 0, 3, { url: 'https://x.dev/a b' })])).toBe(
+      '[doc](https://x.dev/a%20b)',
+    );
+  });
+});

@@ -140,39 +140,43 @@ export class SettingsTab extends PluginSettingTab {
     if (s.useCoreDailyNote && readCoreDailyNoteOptions(this.app) === null) {
       coreToggle.descEl.createEl('div', { text: t('settings.coreDaily.unavailable'), cls: 'mod-warning' });
     }
-    if (s.useCoreDailyNote) return;
 
-    new Setting(root)
-      .setName(t('settings.folder.name'))
-      .setDesc(t('settings.folder.desc'))
-      .addText((text) =>
+    // Folder and note name are the two fields core mode replaces. The heading
+    // below is NOT one of them — entries land under it in either mode, so it
+    // must stay visible.
+    if (!s.useCoreDailyNote) {
+      new Setting(root)
+        .setName(t('settings.folder.name'))
+        .setDesc(t('settings.folder.desc'))
+        .addText((text) =>
+          text
+            .setPlaceholder(t('settings.folder.placeholder'))
+            .setValue(s.folder)
+            .onChange(async (v) => {
+              s.folder = stripSlashes(v);
+              await this.plugin.saveSettings();
+            }),
+        );
+
+      const filename = new Setting(root).setName(t('settings.filename.name'));
+
+      const updatePreview = () => {
+        filename.setDesc(t('settings.filename.desc', { preview: this.previewPath() }));
+      };
+      updatePreview();
+
+      filename.addText((text) =>
         text
-          .setPlaceholder(t('settings.folder.placeholder'))
-          .setValue(s.folder)
+          .setPlaceholder(t('settings.filename.placeholder'))
+          .setValue(s.filenameTemplate)
           .onChange(async (v) => {
-            s.folder = stripSlashes(v);
+            s.filenameTemplate = v.trim();
             await this.plugin.saveSettings();
+            // Live preview is the whole reason a template field is tolerable.
+            updatePreview();
           }),
       );
-
-    const filename = new Setting(root).setName(t('settings.filename.name'));
-
-    const updatePreview = () => {
-      filename.setDesc(t('settings.filename.desc', { preview: this.previewPath() }));
-    };
-    updatePreview();
-
-    filename.addText((text) =>
-      text
-        .setPlaceholder(t('settings.filename.placeholder'))
-        .setValue(s.filenameTemplate)
-        .onChange(async (v) => {
-          s.filenameTemplate = v.trim();
-          await this.plugin.saveSettings();
-          // Live preview is the whole reason a template field is tolerable.
-          updatePreview();
-        }),
-    );
+    }
 
     new Setting(root)
       .setName(t('settings.heading.name'))

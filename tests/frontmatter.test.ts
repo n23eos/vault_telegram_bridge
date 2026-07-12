@@ -138,3 +138,45 @@ describe('splitFrontmatter', () => {
     expect(splitFrontmatter('body\n')).toEqual({ head: '', body: 'body\n' });
   });
 });
+
+describe('writeSyncedIds — ensureTag (review fix: seeded templates)', () => {
+  it('adds the tag to seed frontmatter that has no tags key', () => {
+    const seeded = '---\naliases:\n  - today\n---\nbody\n';
+    const out = writeSyncedIds(seeded, ['555:1'], true);
+    expect(out).toContain('tags:');
+    expect(out).toContain('- tg-bridge');
+    expect(out).toContain('aliases:');
+  });
+
+  it('appends the tag to an existing block-style tags list', () => {
+    const seeded = '---\ntags:\n  - daily\n---\nbody\n';
+    const out = writeSyncedIds(seeded, ['555:1'], true);
+    expect(out).toContain('- daily');
+    expect(out).toContain('- tg-bridge');
+  });
+
+  it('appends the tag to a flow-style tags list', () => {
+    const seeded = '---\ntags: [daily, journal]\n---\nbody\n';
+    const out = writeSyncedIds(seeded, ['555:1'], true);
+    expect(out).toContain('tags: [daily, journal, tg-bridge]');
+  });
+
+  it('converts a scalar tags value rather than clobbering it', () => {
+    const seeded = '---\ntags: daily\n---\nbody\n';
+    const out = writeSyncedIds(seeded, ['555:1'], true);
+    expect(out).toContain('- daily');
+    expect(out).toContain('- tg-bridge');
+  });
+
+  it('does not duplicate an already-present tag', () => {
+    const seeded = '---\ntags:\n  - tg-bridge\n---\nbody\n';
+    const out = writeSyncedIds(seeded, ['555:1'], true);
+    expect(out.match(/tg-bridge/g)).toHaveLength(1);
+  });
+
+  it('never touches tags without ensureTag — an existing note is the user’s', () => {
+    const existing = '---\naliases:\n  - x\n---\nbody\n';
+    const out = writeSyncedIds(existing, ['555:1']);
+    expect(out).not.toContain('tg-bridge');
+  });
+});

@@ -55,7 +55,8 @@ export default class TelegramInboxPlugin extends Plugin {
       onNotice: (e: HumanError) => new Notice(e.human),
       attachments: new VaultAttachmentStore({
         app: this.app,
-        download: (fileId) => this.client.download(fileId),
+        resolve: (fileId) => this.client.resolveFile(fileId),
+        fetch: (filePath) => this.client.fetchFile(filePath),
         format: formatDate,
       }),
       seed: (date) => this.dailyNoteSeed(date),

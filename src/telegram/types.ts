@@ -51,9 +51,10 @@ export interface InboundMessage extends MsgRef {
   attachment?: TgAttachment;
 }
 
-/** The bytes of one attachment, plus the extension the server path revealed. */
-export interface DownloadedFile {
-  data: ArrayBuffer;
+/** What `getFile` reveals about an attachment before any bytes move. */
+export interface ResolvedFile {
+  /** The server path the file endpoint wants. */
+  filePath: string;
   /** `.jpg`, `.oga`, … — lower-case, with the dot. `''` when the server path had none. */
   ext: string;
 }
