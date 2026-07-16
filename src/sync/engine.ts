@@ -8,7 +8,7 @@ import { resolveDailyNotePath, type DateFormatter } from '../vault/daily-note';
 import type { NoteEntry, NoteWriter } from '../vault/writer';
 import type { Transcriber } from '../transcription';
 import { markerKey } from './dedupe';
-import { renderEntry } from './render';
+import { renderEntry, sanitizeInline } from './render';
 import { routeMessage } from './routing';
 
 /**
@@ -182,7 +182,8 @@ export class SyncEngine {
             model: s.transcriptionModel,
           },
         );
-        attachmentLines.push(t('entry.transcription', { text: transcript }));
+        const [first = '', ...rest] = sanitizeInline(transcript).split('\n');
+        attachmentLines.push(t('entry.transcription', { text: first }), ...rest);
       } catch (error) {
         this.deps.onNotice(
           error instanceof HumanError
