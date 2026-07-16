@@ -1,5 +1,5 @@
 import { requestUrl, type RequestUrlParam, type RequestUrlResponse } from 'obsidian';
-import { errTranscriptionFailed } from './errors';
+import { errNetwork, errRateLimited, errTranscriptionFailed } from './errors';
 
 export interface TranscriptionFile {
   fileName: string;
@@ -39,14 +39,26 @@ export class OpenAITranscriber implements Transcriber {
         throw: false,
       });
     } catch (error) {
-      throw errTranscriptionFailed('network error', error);
+      // Transport-level failure: retryable, same as any other network error.
+      throw errNetwork(error);
     }
 
+    // 429 and 5xx are the provider's "try again later" — surface them as the
+    // retryable errors the engine already knows how to retry.
+    if (response.status === 429) throw errRateLimited(30);
+    if (response.status >= 500) throw errNetwork();
     if (response.status < 200 || response.status >= 300) {
       throw errTranscriptionFailed(`HTTP ${response.status}`);
     }
 
-    const body = response.json as { text?: unknown } | undefined;
+    let body: { text?: unknown } | undefined;
+    try {
+      // `json` is a lazy parse in Obsidian's RequestUrlResponse; a 2xx with an
+      // HTML body (reverse-proxy landing page) throws right here.
+      body = response.json as { text?: unknown } | undefined;
+    } catch (error) {
+      throw errTranscriptionFailed('invalid response', error);
+    }
     // Empty text on a 2xx is a silent recording, not a failure.
     return typeof body?.text === 'string' ? body.text.trim() : '';
   }
