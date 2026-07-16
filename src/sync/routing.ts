@@ -28,9 +28,12 @@ export function resolveRoute(
   const hashtags = entities.filter((entity) => entity.type === 'hashtag');
 
   for (const route of routes) {
-    const tag = route.tag.replace(/^#/, '').toLocaleLowerCase();
+    // Locale-independent toLowerCase: toLocaleLowerCase on a Turkish device
+    // turns 'IDEA' into 'ıdea' and the route never matches.
+    const tag = route.tag.replace(/^#/, '').toLowerCase();
+    if (tag === '') continue;
     const entity = hashtags.find((candidate) =>
-      text.slice(candidate.offset, candidate.offset + candidate.length).replace(/^#/, '').toLocaleLowerCase() === tag,
+      text.slice(candidate.offset, candidate.offset + candidate.length).replace(/^#/, '').toLowerCase() === tag,
     );
     if (entity) return { route, entity };
   }
@@ -66,8 +69,18 @@ export function resolveRoutePath(template: string, date: Date, format: DateForma
     throw errBadTemplate(template);
   }
 
-  const withExtension = rendered.toLocaleLowerCase().endsWith('.md') ? rendered : `${rendered}.md`;
+  const withExtension = rendered.toLowerCase().endsWith('.md') ? rendered : `${rendered}.md`;
   return normalizePath(withExtension);
+}
+
+/** Settings-tab validation: can this template ever resolve? Pure, date-independent. */
+export function isValidRoutePath(template: string): boolean {
+  try {
+    resolveRoutePath(template, new Date(0), (chunk) => chunk);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -141,8 +154,17 @@ function removeEntity(
     } else if (entity.offset <= start && entityEnd >= end) {
       const length = entity.length - removedLength;
       if (length > 0) adjusted.push({ ...entity, length });
+    } else if (entity.offset < start) {
+      // Ends inside the removed span: keep the surviving head. Trailing
+      // whitespace is trimmed — `**important **` is not valid Markdown emphasis.
+      let length = start - entity.offset;
+      while (length > 0 && /\s/.test(text[entity.offset + length - 1])) length--;
+      if (length > 0) adjusted.push({ ...entity, length });
+    } else if (entityEnd > end) {
+      // Starts inside the removed span: keep the surviving tail.
+      adjusted.push({ ...entity, offset: start, length: entityEnd - end });
     }
-    // Entities wholly or partially inside the removed hashtag are discarded.
+    // Entities wholly inside the removed hashtag are discarded.
   }
 
   return { text: text.slice(0, start) + text.slice(end), entities: adjusted };
