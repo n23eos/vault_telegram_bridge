@@ -69,7 +69,16 @@ Optional transcription supports Telegram voice messages, audio files and round v
 - your API key;
 - the provider's transcription model (the default is `whisper-1`).
 
-The audio file is downloaded from Telegram once, stored in the vault, then sent to `{baseUrl}/audio/transcriptions`. The transcript is written below the embed. If the transcription provider fails, the attachment is still saved and synchronization continues.
+Two providers that work out of the box:
+
+| Provider | Base URL | Model | Key |
+|---|---|---|---|
+| Groq (free tier) | `https://api.groq.com/openai/v1` | `whisper-large-v3` | [console.groq.com/keys](https://console.groq.com/keys) |
+| OpenAI | `https://api.openai.com/v1` | `whisper-1` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+
+The model must be a *speech-to-text* model — a chat model on the same endpoint is rejected by the provider. The **Check the connection** button under the settings sends a fraction of a second of silence and reports exactly what the provider said, so a wrong URL, key or model is caught before the first real voice note.
+
+The audio file is downloaded from Telegram once, stored in the vault, then sent to `{baseUrl}/audio/transcriptions`. (Telegram serves voice notes as `.oga`; the upload is renamed to `.ogg`, which Whisper hosts accept — the file in your vault keeps its real name.) The transcript is written below the embed. If the transcription provider fails, the attachment is still saved and synchronization continues.
 
 ## Network use
 
