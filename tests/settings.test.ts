@@ -33,6 +33,7 @@ describe('migrate', () => {
       botToken: '123456:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
       boundChatId: '-100123',
       useCoreDailyNote: true,
+      routes: [{ tag: 'idea', notePath: 'Inbox/Ideas.md', heading: '## Ideas' }],
       folder: 'Inbox',
       filenameTemplate: 'YYYY-MM-DD',
       heading: '## TG',
@@ -40,6 +41,10 @@ describe('migrate', () => {
       blockStyle: 'callout' as const,
       calloutType: 'tip',
       syncIntervalSeconds: 45,
+      transcriptionEnabled: true,
+      transcriptionBaseUrl: 'https://stt.example/v1',
+      transcriptionApiKey: 'secret',
+      transcriptionModel: 'whisper-large-v3',
       cursor: 12,
       lastSync: { at: 1, ok: true, count: 3 },
     };
@@ -68,6 +73,73 @@ describe('migrate', () => {
 
     it('stamps the new version', () => {
       expect(migrate(v1).version).toBe(2);
+    });
+  });
+
+  describe('v2 → v3', () => {
+    const v2 = { version: 2, folder: 'Inbox', heading: '## TG', cursor: 5 };
+
+    it('adds routing and disabled transcription defaults', () => {
+      const s = migrate(v2);
+      expect(s.routes).toEqual([]);
+      expect(s.transcriptionEnabled).toBe(false);
+      expect(s.transcriptionBaseUrl).toBe('https://api.openai.com/v1');
+      expect(s.transcriptionApiKey).toBe('');
+      expect(s.transcriptionModel).toBe('whisper-1');
+      expect(s.version).toBe(3);
+    });
+
+    it('preserves existing fields', () => {
+      const s = migrate(v2);
+      expect(s.folder).toBe('Inbox');
+      expect(s.heading).toBe('## TG');
+      expect(s.cursor).toBe(5);
+    });
+  });
+
+  describe('routes', () => {
+    it('normalises tags and route paths and drops malformed rows', () => {
+      const s = migrate({
+        version: 3,
+        routes: [
+          { tag: ' #Idea ', notePath: '/Inbox/Ideas.md', heading: ' ## Ideas ' },
+          { tag: '', notePath: 'Inbox/Empty.md' },
+          { tag: 'bad tag', notePath: 'Inbox/Bad.md' },
+          { tag: 'ok', notePath: '' },
+        ],
+      });
+      expect(s.routes).toEqual([{ tag: 'idea', notePath: 'Inbox/Ideas.md', heading: '## Ideas' }]);
+    });
+
+    it('caps the number of routes', () => {
+      const routes = Array.from({ length: 150 }, (_, i) => ({ tag: `tag${i}`, notePath: `N/${i}.md` }));
+      expect(migrate({ version: 3, routes }).routes).toHaveLength(100);
+    });
+  });
+
+  describe('transcription settings', () => {
+    it('normalises the base URL and trims credentials', () => {
+      const s = migrate({
+        version: 3,
+        transcriptionEnabled: true,
+        transcriptionBaseUrl: ' https://stt.example/v1/// ',
+        transcriptionApiKey: ' key ',
+        transcriptionModel: ' model ',
+      });
+      expect(s.transcriptionEnabled).toBe(true);
+      expect(s.transcriptionBaseUrl).toBe('https://stt.example/v1');
+      expect(s.transcriptionApiKey).toBe('key');
+      expect(s.transcriptionModel).toBe('model');
+    });
+
+    it('falls back for invalid values', () => {
+      const s = migrate({
+        version: 3,
+        transcriptionBaseUrl: 'ftp://example.com',
+        transcriptionModel: '   ',
+      });
+      expect(s.transcriptionBaseUrl).toBe(DEFAULT_SETTINGS.transcriptionBaseUrl);
+      expect(s.transcriptionModel).toBe(DEFAULT_SETTINGS.transcriptionModel);
     });
   });
 
