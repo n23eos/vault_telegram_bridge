@@ -59,7 +59,7 @@ Create ordered rules in Settings → Vault Telegram Bridge → **Hashtag routes*
 #task → Projects/Tasks/YYYY-MM.md → ## Inbox
 ```
 
-The first matching rule wins. Matching is case-insensitive and uses Telegram's hashtag metadata, so text that merely resembles a hashtag is not treated as a command. The matched routing tag is removed from the saved entry; other hashtags and formatting stay intact. Note paths support the same Moment.js date tokens as daily-note names. With no match, the message goes to the normal daily note.
+The first matching rule wins. Matching is case-insensitive and uses Telegram's hashtag metadata, so text that merely resembles a hashtag is not treated as a command. The matched routing tag is removed from the saved entry; other hashtags and formatting stay intact. Note paths support common multi-character Moment.js date tokens such as `YYYY`, `MM`, `DD`, `HH`, `mm` and `ss`. With no match, the message goes to the normal daily note.
 
 ## Voice transcription
 
