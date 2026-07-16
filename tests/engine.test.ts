@@ -484,6 +484,27 @@ describe('SyncEngine — attachments', () => {
     );
   });
 
+  it('writes no transcript line and no notice when the transcript is empty', async () => {
+    const voice = {
+      chatId: '555',
+      messageId: 1,
+      date: T,
+      text: '',
+      attachment: { kind: 'voice' as const, fileId: 'v1' },
+    };
+    const { engine, writer, onNotice } = build(
+      [result([voice], 2)],
+      { transcriptionEnabled: true, transcriptionApiKey: 'key' },
+      {
+        save: async () => ({ line: '![[voice.oga]]', fileName: 'voice.oga', data: new ArrayBuffer(3) }),
+        transcribe: async () => '',
+      },
+    );
+    await engine.run('manual');
+    expect(writer.body('2026-07-08.md')).toBe('## Telegram\n\n**09:12**\n![[voice.oga]]\n');
+    expect(onNotice).not.toHaveBeenCalled();
+  });
+
   it('keeps the embed, advances the cursor and reports a transcription failure', async () => {
     const voice = {
       chatId: '555',

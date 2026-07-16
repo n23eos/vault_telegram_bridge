@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { HumanError } from '../src/errors';
-import { buildMultipart, OpenAITranscriber } from '../src/transcription';
+import { buildMultipart, OpenAITranscriber, silentWav } from '../src/transcription';
 
 describe('buildMultipart', () => {
   it('includes model and binary file in a standards-compliant multipart body', () => {
@@ -65,7 +65,7 @@ describe('OpenAITranscriber', () => {
     );
   });
 
-  it('rejects an empty successful response', async () => {
+  it('returns an empty string for an empty transcript — silence is not an error', async () => {
     const request = vi.fn(async () => ({ status: 200, json: { text: '   ' } }));
     const client = new OpenAITranscriber(request as never, () => 'b');
     await expect(
@@ -73,6 +73,32 @@ describe('OpenAITranscriber', () => {
         { fileName: 'voice.oga', data: new ArrayBuffer(1) },
         { baseUrl: 'https://stt.example/v1', apiKey: 'k', model: 'm' },
       ),
-    ).rejects.toSatisfy((error) => error instanceof HumanError && error.key === 'error.transcriptionFailed');
+    ).resolves.toBe('');
+  });
+
+  it('sends Telegram .oga voice files under an .ogg name — Whisper hosts reject the alias', async () => {
+    const request = vi.fn(async () => ({ status: 200, json: { text: 'ok' } }));
+    const client = new OpenAITranscriber(request as never, () => 'b');
+    await client.transcribe(
+      { fileName: 'TG-2026-07-16-17.OGA', data: new ArrayBuffer(1) },
+      { baseUrl: 'https://stt.example/v1', apiKey: 'k', model: 'm' },
+    );
+    const call = (request.mock.calls as unknown as [[{ body: ArrayBuffer }]])[0][0];
+    const body = new TextDecoder().decode(call.body);
+    expect(body).toContain('filename="TG-2026-07-16-17.ogg"');
+    expect(body).not.toContain('.OGA');
+  });
+});
+
+describe('silentWav', () => {
+  it('produces a valid mono 16-bit PCM WAV header with the declared data size', () => {
+    const wav = silentWav();
+    const bytes = new Uint8Array(wav);
+    const ascii = (from: number, len: number) => new TextDecoder().decode(bytes.slice(from, from + len));
+    expect(ascii(0, 4)).toBe('RIFF');
+    expect(ascii(8, 4)).toBe('WAVE');
+    const dataSize = new DataView(wav).getUint32(40, true);
+    expect(wav.byteLength).toBe(44 + dataSize);
+    expect(dataSize).toBeGreaterThan(0);
   });
 });
