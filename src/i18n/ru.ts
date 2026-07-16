@@ -78,6 +78,15 @@ export const ru: Dictionary = {
   'settings.transcription.apiKey.placeholder': 'sk-…',
   'settings.transcription.model.name': 'Модель',
   'settings.transcription.model.desc': 'Например whisper-1 или название модели из документации вашего провайдера.',
+  'settings.transcription.hint.groq':
+    'Groq (бесплатный тариф): базовый URL https://api.groq.com/openai/v1, модель whisper-large-v3, ключ на console.groq.com/keys.',
+  'settings.transcription.hint.openai':
+    'OpenAI: базовый URL https://api.openai.com/v1, модель whisper-1, ключ на platform.openai.com/api-keys.',
+  'settings.transcription.test.name': 'Проверить подключение',
+  'settings.transcription.test.desc':
+    'Отправляет долю секунды тишины, чтобы проверить URL, ключ и модель.',
+  'settings.transcription.test.button': 'Проверить',
+  'settings.transcription.test.ok': 'Расшифровка работает.',
 
   'settings.section.sync': 'Синхронизация',
   'settings.interval.name': 'Проверять каждые',

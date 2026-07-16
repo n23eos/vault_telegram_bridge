@@ -97,6 +97,15 @@ export const en = {
   'settings.transcription.apiKey.placeholder': 'sk-…',
   'settings.transcription.model.name': 'Model',
   'settings.transcription.model.desc': 'For example whisper-1 or the model name your provider documents.',
+  'settings.transcription.hint.groq':
+    'Groq (free tier): base URL https://api.groq.com/openai/v1, model whisper-large-v3, key from console.groq.com/keys.',
+  'settings.transcription.hint.openai':
+    'OpenAI: base URL https://api.openai.com/v1, model whisper-1, key from platform.openai.com/api-keys.',
+  'settings.transcription.test.name': 'Check the connection',
+  'settings.transcription.test.desc':
+    'Sends a fraction of a second of silence to verify the URL, key and model.',
+  'settings.transcription.test.button': 'Test',
+  'settings.transcription.test.ok': 'Transcription works.',
 
   // --- settings: sync ---
   'settings.section.sync': 'Sync',

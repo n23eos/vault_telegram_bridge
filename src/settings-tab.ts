@@ -11,6 +11,7 @@ import {
   stripSlashes,
 } from './settings';
 import { joinEntries, renderEntry, type BlockStyle } from './sync/render';
+import { OpenAITranscriber, silentWav } from './transcription';
 import { readCoreDailyNoteOptions } from './vault/core-daily-notes';
 import { resolveDailyNotePath } from './vault/daily-note';
 
@@ -354,6 +355,10 @@ export class SettingsTab extends PluginSettingTab {
 
     if (!s.transcriptionEnabled) return;
 
+    const hint = root.createEl('div', { cls: 'setting-item-description' });
+    hint.createEl('div', { text: t('settings.transcription.hint.groq') });
+    hint.createEl('div', { text: t('settings.transcription.hint.openai') });
+
     new Setting(root)
       .setName(t('settings.transcription.baseUrl.name'))
       .setDesc(t('settings.transcription.baseUrl.desc'))
@@ -390,6 +395,32 @@ export class SettingsTab extends PluginSettingTab {
           if (value.trim() !== '') {
             s.transcriptionModel = value.trim();
             await this.plugin.saveSettings();
+          }
+        }),
+      );
+
+    new Setting(root)
+      .setName(t('settings.transcription.test.name'))
+      .setDesc(t('settings.transcription.test.desc'))
+      .addButton((button) =>
+        button.setButtonText(t('settings.transcription.test.button')).onClick(async () => {
+          button.setDisabled(true);
+          try {
+            // Success is a 2xx from the provider; an empty transcript is the
+            // expected answer to a fraction of a second of silence.
+            await new OpenAITranscriber().transcribe(
+              { fileName: 'test.wav', data: silentWav() },
+              {
+                baseUrl: s.transcriptionBaseUrl,
+                apiKey: s.transcriptionApiKey,
+                model: s.transcriptionModel,
+              },
+            );
+            new Notice(t('settings.transcription.test.ok'));
+          } catch (e) {
+            new Notice(e instanceof HumanError ? e.human : String(e));
+          } finally {
+            button.setDisabled(false);
           }
         }),
       );
