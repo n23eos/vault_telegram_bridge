@@ -72,7 +72,7 @@ describe('migrate', () => {
     });
 
     it('stamps the new version', () => {
-      expect(migrate(v1).version).toBe(2);
+      expect(migrate(v1).version).toBe(CURRENT_SCHEMA_VERSION);
     });
   });
 

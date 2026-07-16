@@ -9,7 +9,7 @@ describe('resolveRoute', () => {
   it('matches routes in settings order, case-insensitively', () => {
     const entities: TgEntity[] = [
       { type: 'hashtag', offset: 0, length: 5 },
-      { type: 'hashtag', offset: 6, length: 6 },
+      { type: 'hashtag', offset: 6, length: 5 },
     ];
     const result = resolveRoute(
       '#Work #IDEA text',

@@ -15,7 +15,16 @@
 
 import type { BlockStyle } from './sync/render';
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
+
+export interface HashtagRoute {
+  /** Telegram hashtag without the leading `#`, stored lower-case. */
+  tag: string;
+  /** Vault-relative note path. Moment tokens are allowed; `.md` is optional. */
+  notePath: string;
+  /** Falls back to the global heading when absent. */
+  heading?: string;
+}
 
 export interface Settings {
   version: number;
@@ -36,6 +45,9 @@ export interface Settings {
    * when the core plugin is disabled.
    */
   useCoreDailyNote: boolean;
+
+  /** First matching Telegram hashtag routes the message away from the daily note. */
+  routes: HashtagRoute[];
 
   /** Vault-relative. Empty string is the vault root. Ignored while `useCoreDailyNote` works. */
   folder: string;
@@ -62,6 +74,12 @@ export interface Settings {
   /** Between polls, while Obsidian is open. */
   syncIntervalSeconds: number;
 
+  /** Optional OpenAI-compatible speech-to-text service. */
+  transcriptionEnabled: boolean;
+  transcriptionBaseUrl: string;
+  transcriptionApiKey: string;
+  transcriptionModel: string;
+
   /** Telegram's `getUpdates` offset. Optimisation only — see the note above. */
   cursor: number | undefined;
 
@@ -74,6 +92,7 @@ export const DEFAULT_SETTINGS: Settings = {
   botToken: '',
   boundChatId: null,
   useCoreDailyNote: false,
+  routes: [],
   folder: '',
   filenameTemplate: 'YYYY-MM-DD',
   heading: '## Telegram',
@@ -81,6 +100,10 @@ export const DEFAULT_SETTINGS: Settings = {
   blockStyle: 'plain',
   calloutType: 'note',
   syncIntervalSeconds: 30,
+  transcriptionEnabled: false,
+  transcriptionBaseUrl: 'https://api.openai.com/v1',
+  transcriptionApiKey: '',
+  transcriptionModel: 'whisper-1',
   cursor: undefined,
   lastSync: null,
 };
@@ -116,6 +139,16 @@ const MIGRATIONS: Record<number, Migration> = {
     lineTemplate: '- {time} {text}',
     blockStyle: 'plain',
     calloutType: 'note',
+  }),
+  /** v2 → v3: hashtag routing and opt-in transcription. */
+  2: (data) => ({
+    ...data,
+    version: 3,
+    routes: [],
+    transcriptionEnabled: false,
+    transcriptionBaseUrl: 'https://api.openai.com/v1',
+    transcriptionApiKey: '',
+    transcriptionModel: 'whisper-1',
   }),
 };
 
@@ -153,6 +186,7 @@ function sanitize(data: Record<string, unknown>): Settings {
     s.boundChatId = data.boundChatId;
   }
   if (typeof data.useCoreDailyNote === 'boolean') s.useCoreDailyNote = data.useCoreDailyNote;
+  if (Array.isArray(data.routes)) s.routes = sanitizeRoutes(data.routes);
   if (typeof data.folder === 'string') s.folder = stripSlashes(data.folder);
   if (typeof data.filenameTemplate === 'string' && data.filenameTemplate.trim() !== '') {
     s.filenameTemplate = data.filenameTemplate.trim();
@@ -177,6 +211,19 @@ function sanitize(data: Record<string, unknown>): Settings {
       MAX_SYNC_INTERVAL_SECONDS,
     );
   }
+  if (typeof data.transcriptionEnabled === 'boolean') {
+    s.transcriptionEnabled = data.transcriptionEnabled;
+  }
+  if (typeof data.transcriptionBaseUrl === 'string') {
+    const url = normalizeHttpUrl(data.transcriptionBaseUrl);
+    if (url) s.transcriptionBaseUrl = url;
+  }
+  if (typeof data.transcriptionApiKey === 'string') {
+    s.transcriptionApiKey = data.transcriptionApiKey.trim();
+  }
+  if (typeof data.transcriptionModel === 'string' && data.transcriptionModel.trim() !== '') {
+    s.transcriptionModel = data.transcriptionModel.trim();
+  }
   if (typeof data.cursor === 'number' && Number.isInteger(data.cursor) && data.cursor >= 0) {
     s.cursor = data.cursor;
   }
@@ -184,6 +231,33 @@ function sanitize(data: Record<string, unknown>): Settings {
 
   s.version = CURRENT_SCHEMA_VERSION;
   return s;
+}
+
+const HASHTAG = /^[\p{L}\p{N}_]+$/u;
+
+function sanitizeRoutes(value: unknown[]): HashtagRoute[] {
+  const routes: HashtagRoute[] = [];
+  for (const item of value.slice(0, 100)) {
+    if (typeof item !== 'object' || item === null) continue;
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.tag !== 'string' || typeof raw.notePath !== 'string') continue;
+    const tag = raw.tag.trim().replace(/^#/, '').toLocaleLowerCase();
+    const notePath = stripSlashes(raw.notePath);
+    if (!HASHTAG.test(tag) || notePath === '') continue;
+    const heading = typeof raw.heading === 'string' ? raw.heading.trim() : '';
+    routes.push({ tag, notePath, ...(heading !== '' ? { heading } : {}) });
+  }
+  return routes;
+}
+
+function normalizeHttpUrl(value: string): string | null {
+  const trimmed = value.trim().replace(/\/+$/, '');
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? trimmed : null;
+  } catch {
+    return null;
+  }
 }
 
 function isLastSync(v: unknown): v is Settings['lastSync'] {
