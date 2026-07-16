@@ -1,10 +1,11 @@
 import { en, type Dictionary, type I18nKey } from './en';
+import { ru } from './ru';
 
 /**
  * TZ §1: the infrastructure lands with the first commit, the RU dictionary in
  * 0.2. Registering a locale is `dictionaries['ru'] = ru` and nothing else.
  */
-const dictionaries: Partial<Record<string, Dictionary>> = { en };
+const dictionaries: Partial<Record<string, Dictionary>> = { en, ru };
 
 let active: Dictionary = en;
 

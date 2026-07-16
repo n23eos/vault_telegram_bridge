@@ -57,6 +57,15 @@ export const en = {
   'settings.heading.name': 'Heading',
   'settings.heading.desc': 'Messages are appended under this heading. It is created if missing.',
 
+  'settings.section.routes': 'Hashtag routes',
+  'settings.routes.desc':
+    'Send #idea or another Telegram hashtag to a specific note. Rules are checked top to bottom; the matched hashtag is removed from the entry.',
+  'settings.routes.tag.placeholder': 'idea',
+  'settings.routes.path.placeholder': 'Inbox/Ideas.md',
+  'settings.routes.heading.placeholder': '## Ideas (optional)',
+  'settings.routes.add': 'Add route',
+  'settings.routes.remove': 'Remove route',
+
   'settings.section.format': 'How each message looks',
   'settings.template.name': 'Line format',
   'settings.template.desc':
@@ -74,6 +83,20 @@ export const en = {
   'settings.calloutType.desc': 'note, tip, quote, info, warning — anything Obsidian accepts after [!…].',
 
   'settings.preview.name': 'Preview',
+
+  // --- settings: transcription ---
+  'settings.section.transcription': 'Voice transcription',
+  'settings.transcription.name': 'Transcribe voice messages',
+  'settings.transcription.desc':
+    'Send voice, audio and video notes to an OpenAI-compatible speech-to-text endpoint. Off by default.',
+  'settings.transcription.baseUrl.name': 'API base URL',
+  'settings.transcription.baseUrl.desc': 'The plugin calls /audio/transcriptions below this URL.',
+  'settings.transcription.apiKey.name': 'API key',
+  'settings.transcription.apiKey.desc':
+    'Stored in this plugin’s data.json inside your Obsidian config folder, like the Telegram bot token.',
+  'settings.transcription.apiKey.placeholder': 'sk-…',
+  'settings.transcription.model.name': 'Model',
+  'settings.transcription.model.desc': 'For example whisper-1 or the model name your provider documents.',
 
   // --- settings: sync ---
   'settings.section.sync': 'Sync',

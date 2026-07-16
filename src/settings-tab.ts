@@ -29,8 +29,68 @@ export class SettingsTab extends PluginSettingTab {
 
     this.renderConnection(containerEl);
     this.renderDestination(containerEl);
+    this.renderRoutes(containerEl);
     this.renderFormat(containerEl);
+    this.renderTranscription(containerEl);
     this.renderSync(containerEl);
+  }
+
+  private renderRoutes(root: HTMLElement): void {
+    const s = this.plugin.settings;
+    new Setting(root).setName(t('settings.section.routes')).setHeading();
+    root.createEl('div', { text: t('settings.routes.desc'), cls: 'setting-item-description' });
+
+    s.routes.forEach((route, index) => {
+      new Setting(root)
+        .setName(`#${route.tag}`)
+        .addText((text) =>
+          text
+            .setPlaceholder(t('settings.routes.tag.placeholder'))
+            .setValue(route.tag)
+            .onChange(async (value) => {
+              route.tag = value.trim().replace(/^#/, '').toLocaleLowerCase();
+              await this.plugin.saveSettings();
+            }),
+        )
+        .addText((text) =>
+          text
+            .setPlaceholder(t('settings.routes.path.placeholder'))
+            .setValue(route.notePath)
+            .onChange(async (value) => {
+              route.notePath = stripSlashes(value);
+              await this.plugin.saveSettings();
+            }),
+        )
+        .addText((text) =>
+          text
+            .setPlaceholder(t('settings.routes.heading.placeholder'))
+            .setValue(route.heading ?? '')
+            .onChange(async (value) => {
+              const heading = value.trim();
+              if (heading === '') delete route.heading;
+              else route.heading = heading;
+              await this.plugin.saveSettings();
+            }),
+        )
+        .addExtraButton((button) =>
+          button
+            .setIcon('trash-2')
+            .setTooltip(t('settings.routes.remove'))
+            .onClick(async () => {
+              s.routes.splice(index, 1);
+              await this.plugin.saveSettings();
+              this.display();
+            }),
+        );
+    });
+
+    new Setting(root).addButton((button) =>
+      button.setButtonText(t('settings.routes.add')).onClick(async () => {
+        s.routes.push({ tag: 'tag', notePath: 'Inbox.md' });
+        await this.plugin.saveSettings();
+        this.display();
+      }),
+    );
   }
 
   /* ---------------- connection ---------------- */
@@ -276,6 +336,63 @@ export class SettingsTab extends PluginSettingTab {
     } catch (e) {
       return e instanceof HumanError ? e.human : String(e);
     }
+  }
+
+  private renderTranscription(root: HTMLElement): void {
+    const s = this.plugin.settings;
+    new Setting(root).setName(t('settings.section.transcription')).setHeading();
+    new Setting(root)
+      .setName(t('settings.transcription.name'))
+      .setDesc(t('settings.transcription.desc'))
+      .addToggle((toggle) =>
+        toggle.setValue(s.transcriptionEnabled).onChange(async (value) => {
+          s.transcriptionEnabled = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+      );
+
+    if (!s.transcriptionEnabled) return;
+
+    new Setting(root)
+      .setName(t('settings.transcription.baseUrl.name'))
+      .setDesc(t('settings.transcription.baseUrl.desc'))
+      .addText((text) =>
+        text.setValue(s.transcriptionBaseUrl).onChange(async (value) => {
+          const trimmed = value.trim().replace(/\/+$/, '');
+          if (/^https?:\/\//i.test(trimmed)) {
+            s.transcriptionBaseUrl = trimmed;
+            await this.plugin.saveSettings();
+          }
+        }),
+      );
+
+    new Setting(root)
+      .setName(t('settings.transcription.apiKey.name'))
+      .setDesc(t('settings.transcription.apiKey.desc'))
+      .addText((text) => {
+        text
+          .setPlaceholder(t('settings.transcription.apiKey.placeholder'))
+          .setValue(s.transcriptionApiKey)
+          .onChange(async (value) => {
+            s.transcriptionApiKey = value.trim();
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.type = 'password';
+        text.inputEl.autocomplete = 'off';
+      });
+
+    new Setting(root)
+      .setName(t('settings.transcription.model.name'))
+      .setDesc(t('settings.transcription.model.desc'))
+      .addText((text) =>
+        text.setValue(s.transcriptionModel).onChange(async (value) => {
+          if (value.trim() !== '') {
+            s.transcriptionModel = value.trim();
+            await this.plugin.saveSettings();
+          }
+        }),
+      );
   }
 
   /* ---------------- sync ---------------- */
