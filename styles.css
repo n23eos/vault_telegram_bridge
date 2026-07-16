@@ -4,3 +4,8 @@
   font-size: 12px;
   white-space: pre-wrap;
 }
+
+/* Settings tab: a field whose current value cannot be used as-is. */
+input.vtb-invalid {
+  border-color: var(--text-error) !important;
+}

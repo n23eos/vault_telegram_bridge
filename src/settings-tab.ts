@@ -5,12 +5,15 @@ import type TelegramInboxPlugin from './main';
 import { formatDate } from './main';
 import {
   BLOCK_STYLES,
+  HASHTAG_SHAPE,
   looksLikeBotToken,
   MAX_SYNC_INTERVAL_SECONDS,
   MIN_SYNC_INTERVAL_SECONDS,
+  normalizeHttpUrl,
   stripSlashes,
 } from './settings';
 import { joinEntries, renderEntry, type BlockStyle } from './sync/render';
+import { isValidRoutePath } from './sync/routing';
 import { OpenAITranscriber, silentWav } from './transcription';
 import { readCoreDailyNoteOptions } from './vault/core-daily-notes';
 import { resolveDailyNotePath } from './vault/daily-note';
@@ -44,24 +47,32 @@ export class SettingsTab extends PluginSettingTab {
     s.routes.forEach((route, index) => {
       new Setting(root)
         .setName(`#${route.tag}`)
-        .addText((text) =>
+        .addText((text) => {
+          const mark = () =>
+            text.inputEl.toggleClass('vtb-invalid', !HASHTAG_SHAPE.test(route.tag));
           text
             .setPlaceholder(t('settings.routes.tag.placeholder'))
             .setValue(route.tag)
             .onChange(async (value) => {
-              route.tag = value.trim().replace(/^#/, '').toLocaleLowerCase();
+              route.tag = value.trim().replace(/^#/, '').toLowerCase();
+              mark();
               await this.plugin.saveSettings();
-            }),
-        )
-        .addText((text) =>
+            });
+          mark();
+        })
+        .addText((text) => {
+          const mark = () =>
+            text.inputEl.toggleClass('vtb-invalid', !isValidRoutePath(route.notePath));
           text
             .setPlaceholder(t('settings.routes.path.placeholder'))
             .setValue(route.notePath)
             .onChange(async (value) => {
               route.notePath = stripSlashes(value);
+              mark();
               await this.plugin.saveSettings();
-            }),
-        )
+            });
+          mark();
+        })
         .addText((text) =>
           text
             .setPlaceholder(t('settings.routes.heading.placeholder'))
@@ -364,9 +375,12 @@ export class SettingsTab extends PluginSettingTab {
       .setDesc(t('settings.transcription.baseUrl.desc'))
       .addText((text) =>
         text.setValue(s.transcriptionBaseUrl).onChange(async (value) => {
-          const trimmed = value.trim().replace(/\/+$/, '');
-          if (/^https?:\/\//i.test(trimmed)) {
-            s.transcriptionBaseUrl = trimmed;
+          // Same rule as the loader: https, or http for loopback only. Invalid
+          // input is marked, never silently dropped.
+          const url = normalizeHttpUrl(value);
+          text.inputEl.toggleClass('vtb-invalid', url === null);
+          if (url !== null) {
+            s.transcriptionBaseUrl = url;
             await this.plugin.saveSettings();
           }
         }),
