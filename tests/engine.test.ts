@@ -158,6 +158,52 @@ describe('SyncEngine — the core promise: one message, one entry', () => {
     expect([...writer.notes.keys()]).toEqual(['Inbox/TG/2026/07/08.md']);
   });
 
+  it('routes a Telegram hashtag to a configured note and removes the routing tag', async () => {
+    const routed = {
+      ...message(1, '#idea buy milk'),
+      entities: [{ type: 'hashtag', offset: 0, length: 5 }],
+    };
+    const { engine, writer } = build([result([routed], 2)], {
+      routes: [{ tag: 'idea', notePath: 'Inbox/Ideas.md', heading: '## Ideas' }],
+    });
+    await engine.run('manual');
+    expect([...writer.notes.keys()]).toEqual(['Inbox/Ideas.md']);
+    expect(writer.body('Inbox/Ideas.md')).toBe('## Ideas\n\n**09:12** buy milk\n');
+  });
+
+  it('falls back to the daily note when no route matches', async () => {
+    const unrouted = {
+      ...message(1, '#work buy milk'),
+      entities: [{ type: 'hashtag', offset: 0, length: 5 }],
+    };
+    const { engine, writer } = build([result([unrouted], 2)], {
+      routes: [{ tag: 'idea', notePath: 'Inbox/Ideas.md' }],
+    });
+    await engine.run('manual');
+    expect([...writer.notes.keys()]).toEqual(['2026-07-08.md']);
+    expect(writer.body('2026-07-08.md')).toContain('#work buy milk');
+  });
+
+  it('groups the same routed note by heading so each route keeps its section', async () => {
+    const idea = {
+      ...message(1, '#idea one'),
+      entities: [{ type: 'hashtag', offset: 0, length: 5 }],
+    };
+    const task = {
+      ...message(2, '#task two'),
+      entities: [{ type: 'hashtag', offset: 0, length: 5 }],
+    };
+    const { engine, writer } = build([result([idea, task], 3)], {
+      routes: [
+        { tag: 'idea', notePath: 'Inbox.md', heading: '## Ideas' },
+        { tag: 'task', notePath: 'Inbox.md', heading: '## Tasks' },
+      ],
+    });
+    await engine.run('manual');
+    expect(writer.body('Inbox.md')).toContain('## Ideas\n\n**09:12** one');
+    expect(writer.body('Inbox.md')).toContain('## Tasks\n\n**09:12** two');
+  });
+
   it('appends to a note the user already wrote in, without disturbing it', async () => {
     const { engine, writer } = build([result([message(1, 'from telegram')], 2)]);
     writer.notes.set('2026-07-08.md', '# Journal\n\nmy own thoughts\n');
