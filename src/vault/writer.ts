@@ -215,10 +215,32 @@ export interface NoteWriter {
    * used only when the note does not exist yet.
    */
   appendEntries(notePath: string, heading: string, entries: NoteEntry[], seed?: string): Promise<number>;
+
+  /**
+   * Message keys already recorded in the note, as of now. A best-effort
+   * pre-check so the engine can skip paid work (transcription) for entries the
+   * final in-write dedup would drop anyway; it is never the dedup itself.
+   */
+  recordedKeys?(notePath: string): Promise<Set<string>>;
 }
 
 export class VaultNoteWriter implements NoteWriter {
   constructor(private readonly vault: Vault) {}
+
+  async recordedKeys(notePath: string): Promise<Set<string>> {
+    const file = this.vault.getAbstractFileByPath(normalizePath(notePath));
+    if (!(file instanceof TFile)) return new Set();
+    try {
+      const content = await this.vault.cachedRead(file);
+      // Same two sources the in-write dedup consults: frontmatter + legacy markers.
+      const keys = readSyncedIds(content);
+      for (const key of extractMarkers(content)) keys.add(key);
+      return keys;
+    } catch {
+      // Unreadable now — the in-write dedup still protects the note.
+      return new Set();
+    }
+  }
 
   async appendEntries(notePath: string, heading: string, entries: NoteEntry[], seed = ''): Promise<number> {
     if (entries.length === 0) return 0;

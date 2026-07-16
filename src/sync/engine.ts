@@ -44,6 +44,8 @@ export class SyncEngine {
   /** Reentrancy guard. A 30 s timer and a "Sync now" click will collide. */
   private running = false;
   private lastError: HumanError | null = null;
+  /** Bad route templates already announced — one Notice, not one per poll. */
+  private readonly noticedRouteTemplates = new Set<string>();
 
   constructor(private readonly deps: EngineDeps) {}
 
@@ -121,8 +123,12 @@ export class SyncEngine {
       // Attachments download *before* that dedup check, so a stale-cursor
       // re-read re-downloads the bytes once. The deterministic file name makes
       // that harmless — same path, already on disk, no second copy.
+      // Best-effort pre-check against the note as it exists now: a redelivered
+      // batch (crash before the cursor persisted) must not re-bill the STT API
+      // for messages already on disk. The writer's own dedup stays the final word.
+      const recorded = (await this.deps.writer.recordedKeys?.(group.path)) ?? new Set<string>();
       const entries: NoteEntry[] = [];
-      for (const m of group.messages) entries.push(await this.toEntry(m, group.path));
+      for (const m of group.messages) entries.push(await this.toEntry(m, group.path, recorded));
 
       const seed = group.routed ? '' : await this.deps.seed(new Date(group.messages[0].date * 1000));
       const count = await this.deps.writer.appendEntries(group.path, group.heading, entries, seed);
@@ -143,19 +149,35 @@ export class SyncEngine {
 
     for (const m of messages) {
       const when = new Date(m.date * 1000);
-      const routed = routeMessage(m.text, m.entities, settings.routes, when, this.deps.format);
-      const path = routed?.path ?? resolveDailyNotePath(settings, when, this.deps.format);
+      // A route whose saved path cannot resolve must not wedge the pipeline:
+      // the message falls back to the daily note and the user is told once.
+      let routed;
+      try {
+        routed = routeMessage(m.text, m.entities, settings.routes, when, this.deps.format);
+      } catch (e) {
+        const err = toHumanError(e);
+        const badTemplate = String(err.params?.template ?? '');
+        if (!this.noticedRouteTemplates.has(badTemplate)) {
+          this.noticedRouteTemplates.add(badTemplate);
+          this.deps.onNotice(err);
+        }
+        routed = undefined;
+      }
+      const dailyPath = resolveDailyNotePath(settings, when, this.deps.format);
+      const path = routed?.path ?? dailyPath;
       const heading = routed?.heading ?? settings.heading;
       const message = routed ? { ...m, text: routed.text, entities: routed.entities } : m;
       const key = JSON.stringify([path, heading]);
       const bucket = groups.get(key);
       if (bucket) bucket.messages.push(message);
-      else groups.set(key, { path, heading, messages: [message], routed: routed !== undefined });
+      // A route pointing at the daily note is still the daily note: it must
+      // receive the daily-note template seed like any other creation.
+      else groups.set(key, { path, heading, messages: [message], routed: routed !== undefined && path !== dailyPath });
     }
     return [...groups.values()];
   }
 
-  private async toEntry(m: InboundMessage, notePath: string): Promise<NoteEntry> {
+  private async toEntry(m: InboundMessage, notePath: string, recorded: ReadonlySet<string>): Promise<NoteEntry> {
     const s = this.deps.settings();
     const when = new Date(m.date * 1000);
 
@@ -166,7 +188,8 @@ export class SyncEngine {
       s.transcriptionEnabled &&
       s.transcriptionApiKey !== '' &&
       m.attachment !== undefined &&
-      isTranscribable(m.attachment.kind);
+      isTranscribable(m.attachment.kind) &&
+      !recorded.has(markerKey(m));
     const saved = m.attachment
       ? await this.deps.attachments.save(m, notePath, wantsTranscription)
       : undefined;
@@ -187,6 +210,11 @@ export class SyncEngine {
           attachmentLines.push(t('entry.transcription', { text: first }), ...rest);
         }
       } catch (error) {
+        // Retryable (rate limit, network): rethrow so the pass fails before the
+        // cursor moves — the batch is redelivered and the transcript retried,
+        // exactly like a failed attachment download. Anything permanent keeps
+        // the entry and tells the user once.
+        if (isRetryable(error)) throw error;
         this.deps.onNotice(
           error instanceof HumanError
             ? error
