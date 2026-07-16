@@ -508,6 +508,32 @@ describe('SyncEngine — attachments', () => {
     expect(onNotice.mock.calls[0][0]).toMatchObject({ key: 'error.transcriptionFailed' });
   });
 
+  it('sanitises and correctly wraps multi-line transcripts in a callout', async () => {
+    const voice = {
+      chatId: '555',
+      messageId: 1,
+      date: T,
+      text: '',
+      attachment: { kind: 'voice' as const, fileId: 'v1' },
+    };
+    const { engine, writer } = build(
+      [result([voice], 2)],
+      {
+        transcriptionEnabled: true,
+        transcriptionApiKey: 'key',
+        blockStyle: 'callout',
+      },
+      {
+        save: async () => ({ line: '![[voice.oga]]', fileName: 'voice.oga', data: new ArrayBuffer(3) }),
+        transcribe: async () => 'first line\n50%% off',
+      },
+    );
+    await engine.run('manual');
+    const body = writer.body('2026-07-08.md');
+    expect(body).toContain('> ![[voice.oga]]\n> 🎙️ first line\n> 50%​% off');
+    expect(body).not.toContain('50%% off');
+  });
+
   it('does not request bytes or STT while transcription is disabled', async () => {
     const voice = {
       chatId: '555',
