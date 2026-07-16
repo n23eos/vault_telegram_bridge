@@ -182,8 +182,10 @@ export class SyncEngine {
             model: s.transcriptionModel,
           },
         );
-        const [first = '', ...rest] = sanitizeInline(transcript).split('\n');
-        attachmentLines.push(t('entry.transcription', { text: first }), ...rest);
+        if (transcript !== '') {
+          const [first = '', ...rest] = sanitizeInline(transcript).split('\n');
+          attachmentLines.push(t('entry.transcription', { text: first }), ...rest);
+        }
       } catch (error) {
         this.deps.onNotice(
           error instanceof HumanError
