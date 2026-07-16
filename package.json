@@ -1,7 +1,7 @@
 {
   "name": "vault-telegram-bridge",
-  "version": "0.2.2",
-  "description": "Capture messages from a Telegram bot into a daily note in your Obsidian vault.",
+  "version": "0.3.0",
+  "description": "Capture Telegram messages, media and voice transcripts into your Obsidian vault.",
   "private": true,
   "type": "module",
   "scripts": {
