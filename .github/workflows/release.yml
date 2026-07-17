@@ -9,6 +9,9 @@ permissions:
   contents: write
   id-token: write
   attestations: write
+  # Required since Jan 2026 for the artifact storage record the
+  # attestation action emits.
+  artifact-metadata: write
 
 jobs:
   build:
@@ -28,7 +31,7 @@ jobs:
       # Cryptographic provenance: lets anyone verify the assets were built
       # from this repository by this workflow (gh attestation verify).
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             main.js
