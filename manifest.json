@@ -1,7 +1,7 @@
 {
   "id": "vault-telegram-bridge",
   "name": "Vault Telegram Bridge",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "minAppVersion": "1.13.0",
   "description": "Capture Telegram messages, media and voice transcripts into your vault. No server required.",
   "author": "n23eos",
