@@ -1,4 +1,5 @@
-
+> **⭐ Found this useful? [Star the repo](https://github.com/n23eos/vault_telegram_bridge)** — that's how other people find it.
+> **🐦 I build in public on X — [@Raincoat_talk](https://x.com/Raincoat_talk)** for new plugins and updates.
 
 # Vault Telegram Bridge
 
