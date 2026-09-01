@@ -1,11 +1,10 @@
-> **⭐ Found this useful? [Star the repo](https://github.com/n23eos/vault_telegram_bridge)** — that's how other people find it.
-> **🐦 I build in public on X — [@Raincoat_talk](https://x.com/Raincoat_talk)** for new plugins and updates.
-
 # Vault Telegram Bridge
 
-Send yourself a message in Telegram — it appears in your Obsidian daily note.
+> **🐦 I build in public on X — [@Raincoat_talk](https://x.com/Raincoat_talk)** for new plugins and updates.
 
-No server, no VPS, no Docker. Works on desktop and mobile.
+**Vault Telegram Bridge captures Telegram messages into an Obsidian note without a server, a VPS or Docker.** Send your own bot a thought, a link, a photo, a voice note or a file, and it lands in the daily note or in a topic note routed by hashtag, under a heading you configure. Text keeps its Telegram formatting as Markdown, and attachments are saved into the vault's attachment folder and embedded with their caption. Delivered message IDs go into the note's frontmatter, so two devices syncing one vault never produce a duplicate entry. Delivery happens while Obsidian is open: the plugin polls Telegram every thirty seconds, on desktop and mobile, with no runtime dependencies.
+
+> **⭐ Found this useful? [Star the repo](https://github.com/n23eos/vault_telegram_bridge)** — that's how other people find it.
 
 ![A message sent to the bot in Telegram appears in the Obsidian daily note](https://raw.githubusercontent.com/n23eos/vault_telegram_bridge/main/docs/screenshots/capture.jpg)
 
