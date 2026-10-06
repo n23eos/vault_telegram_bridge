@@ -144,6 +144,7 @@ export const en = {
   'error.tokenShape':
     'That doesn’t look like a bot token. It should be a number, a colon, then about 35 characters.',
   'error.network': 'Could not reach Telegram. Check your connection.',
+  'error.requestSuperseded': 'The connection changed. Sync will retry.',
   'error.offline': 'Offline — will try again on the next check.',
   'error.conflict':
     'Another device is already polling this bot. That is fine: whichever device is open will sync, and the note reaches the others through vault sync.',

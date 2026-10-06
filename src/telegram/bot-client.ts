@@ -5,6 +5,7 @@ import {
   errNetwork,
   errNoToken,
   errOffline,
+  errRequestSuperseded,
   errTelegram,
   errTokenShape,
   HumanError,
@@ -217,6 +218,7 @@ export class BotClient implements MessageSource {
   private identity: SourceIdentity | null = null;
   private readonly flood: FloodPolicy;
   private disposed = false;
+  private lifecycle = 0;
 
   constructor(private readonly opts: BotClientOptions) {
     this.flood = new FloodPolicy(realDeps(opts.onLongWait));
@@ -237,14 +239,20 @@ export class BotClient implements MessageSource {
       throw errTokenShape();
     }
 
+    const lifecycle = ++this.lifecycle;
+    this.disposed = true;
     this.state = 'connecting';
     try {
       const me = await this.call<TgUser>('getMe', {});
+      this.assertCurrent(lifecycle);
       this.identity = { displayName: me.username ?? me.first_name ?? 'bot' };
+      this.disposed = false;
       this.state = 'connected';
       return this.identity;
     } catch (e) {
-      this.state = e instanceof HumanError && e.key === 'error.invalidToken' ? 'auth_required' : 'disconnected';
+      if (lifecycle === this.lifecycle) {
+        this.state = e instanceof HumanError && e.key === 'error.invalidToken' ? 'auth_required' : 'disconnected';
+      }
       throw e;
     }
   }
@@ -252,15 +260,23 @@ export class BotClient implements MessageSource {
   async poll(cursor: number | undefined): Promise<PollResult> {
     if (this.disposed) return empty();
     if (!this.opts.getToken()) throw errNoToken();
+    const lifecycle = this.lifecycle;
 
-    const updates = await this.call<TgUpdate[]>('getUpdates', {
-      offset: cursor,
-      limit: PAGE_SIZE,
-      timeout: 0,
-      allowed_updates: ALLOWED_UPDATES,
-    });
+    let updates: TgUpdate[];
+    try {
+      updates = await this.call<TgUpdate[]>('getUpdates', {
+        offset: cursor,
+        limit: PAGE_SIZE,
+        timeout: 0,
+        allowed_updates: ALLOWED_UPDATES,
+      });
+    } catch (e) {
+      // An old request must not report errors against a new connection.
+      if (this.disposed || lifecycle !== this.lifecycle) return empty();
+      throw e;
+    }
 
-    if (this.disposed) return empty();
+    if (this.disposed || lifecycle !== this.lifecycle) return empty();
 
     const parsed = parseUpdates(updates, this.opts.getBoundChatId());
     if (parsed.newBinding) this.opts.onBind(parsed.newBinding);
@@ -298,21 +314,27 @@ export class BotClient implements MessageSource {
    */
   async fetchFile(filePath: string): Promise<ArrayBuffer> {
     const maxAttempts = 3;
+    const lifecycle = this.lifecycle;
+    const token = this.opts.getToken();
 
     for (let attempt = 1; ; attempt++) {
+      this.assertCurrent(lifecycle);
       if (!navigator.onLine) throw errOffline();
       await this.flood.gate();
+      this.assertCurrent(lifecycle);
 
       let res: RequestUrlResponse;
       try {
         res = await requestUrl({
-          url: `${API_BASE}/file/bot${this.opts.getToken()}/${filePath}`,
+          url: `${API_BASE}/file/bot${token}/${filePath}`,
           throw: false,
         });
       } catch (e) {
+        this.assertCurrent(lifecycle);
         throw navigator.onLine ? errNetwork(e) : errOffline();
       }
 
+      this.assertCurrent(lifecycle);
       const throttle = classifyStatus(res.status, safeJson<TgResponse<unknown>>(res));
       if (throttle) {
         if (attempt >= maxAttempts) throw throttle;
@@ -331,6 +353,7 @@ export class BotClient implements MessageSource {
   }
 
   async disconnect(): Promise<void> {
+    this.lifecycle++;
     this.disposed = true;
     this.state = 'disconnected';
   }
@@ -343,6 +366,11 @@ export class BotClient implements MessageSource {
 
   /* ---------------- transport ---------------- */
 
+  private assertCurrent(lifecycle: number): void {
+    // Attachment cancellation must retry the batch, never produce a permanent placeholder.
+    if (lifecycle !== this.lifecycle) throw errRequestSuperseded();
+  }
+
   /**
    * One Bot API call, with the rate-limit and conflict policy applied.
    *
@@ -352,15 +380,19 @@ export class BotClient implements MessageSource {
    */
   private async call<T>(method: string, params: Record<string, unknown>): Promise<T> {
     const maxAttempts = 3;
+    const lifecycle = this.lifecycle;
+    const token = this.opts.getToken();
 
     for (let attempt = 1; ; attempt++) {
+      this.assertCurrent(lifecycle);
       if (!navigator.onLine) throw errOffline();
       await this.flood.gate();
+      this.assertCurrent(lifecycle);
 
       let res: RequestUrlResponse;
       try {
         res = await requestUrl({
-          url: `${API_BASE}/bot${this.opts.getToken()}/${method}`,
+          url: `${API_BASE}/bot${token}/${method}`,
           method: 'POST',
           contentType: 'application/json',
           body: JSON.stringify(pruneUndefined(params)),
@@ -370,9 +402,12 @@ export class BotClient implements MessageSource {
         });
       } catch (e) {
         // requestUrl only rejects on transport failure, never on HTTP status.
+        this.assertCurrent(lifecycle);
         throw navigator.onLine ? errNetwork(e) : errOffline();
       }
 
+      // Late responses must not retry, notify, or reset the new flood state.
+      this.assertCurrent(lifecycle);
       const body = safeJson<TgResponse<T>>(res);
 
       if (res.status === 401 || res.status === 404) throw errInvalidToken();

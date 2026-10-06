@@ -44,10 +44,10 @@ export const MAX_BOT_FILE_BYTES = 20 * 1024 * 1024;
 const ILLEGAL = /[\\/:*?"<>|#^[\]]/g;
 
 /**
- * `TG-<date>-<messageId><ext>`, or `<original stem> TG-<messageId><ext>` when
- * Telegram preserved an original name (documents, audio). The `TG-<messageId>`
- * suffix is the determinism; the stem is for the human scanning a folder.
- * Leading dots are stripped — a `.env` must not become a hidden vault file.
+ * Names include chat id and message id because Telegram scopes message ids to a
+ * chat. A negative numeric chat id uses an `n` prefix, which keeps the identity
+ * stable and safe in a filename. Leading dots are stripped so a `.env` cannot
+ * become a hidden vault file.
  */
 export function attachmentFileName(m: InboundMessage, dateStr: string, serverExt: string): string {
   const original = m.attachment?.fileName?.trim() ?? '';
@@ -58,9 +58,11 @@ export function attachmentFileName(m: InboundMessage, dateStr: string, serverExt
     .trim();
   const originalExtension = dot > 0 ? original.slice(dot).replace(ILLEGAL, '') : '';
   const ext = originalExtension || serverExt;
+  const chatId = m.chatId.startsWith('-') ? `n${m.chatId.slice(1)}` : m.chatId;
+  const identity = `${chatId}-${m.messageId}`;
 
-  if (stem !== '') return `${stem} TG-${m.messageId}${ext}`;
-  return `TG-${dateStr}-${m.messageId}${ext}`;
+  if (stem !== '') return `${stem} TG-${identity}${ext}`;
+  return `TG-${dateStr}-${identity}${ext}`;
 }
 
 /** `.pdf` from `report.pdf`; `''` when the original name is absent or extension-less. */
@@ -131,7 +133,7 @@ export class VaultAttachmentStore implements AttachmentSink {
     }
   }
 
-  /** The exact target first, then anywhere — the deterministic name is unique per message. */
+  /** The exact target first, then anywhere. The deterministic name is unique per chat message. */
   private findByName(name: string, target: string): TFile | null {
     const atTarget = this.deps.app.vault.getAbstractFileByPath(target);
     if (atTarget instanceof TFile) return atTarget;

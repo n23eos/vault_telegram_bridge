@@ -34,6 +34,7 @@ export function isRetryable(e: unknown): boolean {
     e instanceof HumanError &&
     (e.key === 'error.offline' ||
       e.key === 'error.network' ||
+      e.key === 'error.requestSuperseded' ||
       e.key === 'error.conflict' ||
       e.key === 'error.rateLimited')
   );
@@ -50,6 +51,7 @@ export const errNoToken = () => new HumanError('error.noToken');
 export const errInvalidToken = () => new HumanError('error.invalidToken');
 export const errTokenShape = () => new HumanError('error.tokenShape');
 export const errNetwork = (cause?: unknown) => new HumanError('error.network', undefined, cause);
+export const errRequestSuperseded = () => new HumanError('error.requestSuperseded');
 export const errOffline = () => new HumanError('error.offline');
 export const errConflict = () => new HumanError('error.conflict');
 export const errRateLimited = (seconds: number) => new HumanError('error.rateLimited', { seconds });

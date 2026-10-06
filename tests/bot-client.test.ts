@@ -1,9 +1,336 @@
-import { describe, expect, it } from 'vitest';
-import { parseUpdates } from '../src/telegram/bot-client';
+import { requestUrl, type RequestUrlResponse } from 'obsidian';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BotClient, parseUpdates } from '../src/telegram/bot-client';
+
+vi.mock('obsidian', () => ({
+  getLanguage: () => 'en',
+  requestUrl: vi.fn(),
+}));
+
+const request = vi.mocked(requestUrl);
+const token = `12345:${'x'.repeat(30)}`;
+const newToken = `67890:${'y'.repeat(30)}`;
+
+const wireResponse = (status: number, json: unknown): RequestUrlResponse => ({
+  status,
+  headers: { 'content-type': 'application/json' },
+  json,
+  text: JSON.stringify(json),
+  arrayBuffer: new ArrayBuffer(0),
+});
+
+const response = (result: unknown) => wireResponse(200, { ok: true, result });
+
+const failure = (status: number) => wireResponse(status, {
+  ok: false,
+  description: 'Request failed',
+  ...(status === 429 ? { parameters: { retry_after: 2 } } : {}),
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function useRetryTimers() {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  vi.stubGlobal('window', globalThis);
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
+}
+
+beforeEach(() => {
+  request.mockReset();
+  Object.defineProperty(globalThis.navigator, 'onLine', { value: true, configurable: true });
+  let now = 1_000;
+  vi.spyOn(Date, 'now').mockImplementation(() => (now += 1_001));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 const msg = (updateId: number, chatId: number, messageId: number, text?: string, date = 1_700_000_000) => ({
   update_id: updateId,
   message: { message_id: messageId, date, chat: { id: chatId }, ...(text === undefined ? {} : { text }) },
+});
+
+describe('BotClient lifecycle', () => {
+  it('polls messages after disconnect and a successful reconnect', async () => {
+    request
+      .mockResolvedValueOnce(response({ username: 'bridge_bot' }))
+      .mockResolvedValueOnce(response([msg(7, 555, 42, 'back online')]));
+    const client = new BotClient({
+      getToken: () => token,
+      getBoundChatId: () => '555',
+      onBind: vi.fn(),
+    });
+
+    await client.disconnect();
+    await client.connect();
+    const result = await client.poll(undefined);
+
+    expect(result.messages.map((message) => message.messageId)).toEqual([42]);
+  });
+
+  it('discards an in-flight poll from before disconnect and reconnect', async () => {
+    let releasePoll!: (value: ReturnType<typeof response>) => void;
+    const inFlightPoll = new Promise<ReturnType<typeof response>>((resolve) => {
+      releasePoll = resolve;
+    });
+    request
+      .mockResolvedValueOnce(response({ username: 'bridge_bot' }))
+      .mockReturnValueOnce(inFlightPoll as never)
+      .mockResolvedValueOnce(response({ username: 'bridge_bot' }));
+    const onBind = vi.fn();
+    const client = new BotClient({
+      getToken: () => token,
+      getBoundChatId: () => null,
+      onBind,
+    });
+
+    await client.connect();
+    const stalePoll = client.poll(undefined);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    await client.disconnect();
+    await client.connect();
+    releasePoll(response([msg(7, 555, 42, 'stale')]));
+
+    await expect(stalePoll).resolves.toMatchObject({ messages: [], cursor: undefined });
+    expect(onBind).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { error: 'network', reconnect: false },
+    { error: 'network', reconnect: true },
+    { error: 401, reconnect: false },
+    { error: 401, reconnect: true },
+    { error: 500, reconnect: true },
+  ])('discards a stale $error failure after disconnect, reconnect=$reconnect', async ({ error, reconnect }) => {
+    const pending = deferred<RequestUrlResponse>();
+    const started = deferred<void>();
+    request
+      .mockResolvedValueOnce(response({ username: 'bridge_bot' }))
+      .mockImplementationOnce(() => {
+        started.resolve();
+        return pending.promise as never;
+      })
+      .mockResolvedValueOnce(response({ username: 'new_bot' }));
+    let currentToken = token;
+    const onBind = vi.fn();
+    const client = new BotClient({ getToken: () => currentToken, getBoundChatId: () => null, onBind });
+
+    await client.connect();
+    const stalePoll = client.poll(700);
+    await started.promise;
+    await client.disconnect();
+    if (reconnect) {
+      currentToken = newToken;
+      await client.connect();
+    }
+    if (typeof error === 'number') pending.resolve(failure(error));
+    else pending.reject(new Error('Transport dropped'));
+
+    await expect(stalePoll).resolves.toEqual({
+      messages: [], cursor: undefined, skipped: { nonText: 0, foreignChat: 0 },
+    });
+    expect(client.status()).toBe(reconnect ? 'connected' : 'disconnected');
+    expect(onBind).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { error: 'network', key: 'error.network' },
+    { error: 401, key: 'error.invalidToken' },
+    { error: 500, key: 'error.telegram' },
+  ])('preserves an active $error failure', async ({ error, key }) => {
+    request.mockResolvedValueOnce(response({ username: 'bridge_bot' }));
+    if (typeof error === 'number') request.mockResolvedValueOnce(failure(error));
+    else request.mockRejectedValueOnce(new Error('Transport dropped'));
+    const client = new BotClient({ getToken: () => token, getBoundChatId: () => '555', onBind: vi.fn() });
+
+    await client.connect();
+    await expect(client.poll(700)).rejects.toMatchObject({ key });
+  });
+
+  it.each([
+    { status: 429, wait: 2_000 },
+    { status: 409, wait: 5_000 },
+  ])('does not retry an old $status poll with the reconnected token', async ({ status, wait }) => {
+    useRetryTimers();
+    request
+      .mockResolvedValueOnce(response({ username: 'bridge_bot' }))
+      .mockResolvedValueOnce(failure(status))
+      .mockResolvedValueOnce(response({ username: 'new_bot' }))
+      .mockResolvedValue(response([msg(80, 555, 42, 'current')]));
+    let currentToken = token;
+    const client = new BotClient({ getToken: () => currentToken, getBoundChatId: () => '555', onBind: vi.fn() });
+
+    await client.connect();
+    const stalePoll = client.poll(700);
+    await vi.advanceTimersByTimeAsync(0);
+    await client.disconnect();
+    currentToken = newToken;
+    await client.connect();
+    await vi.advanceTimersByTimeAsync(wait);
+
+    await expect(stalePoll).resolves.toEqual({
+      messages: [], cursor: undefined, skipped: { nonText: 0, foreignChat: 0 },
+    });
+    const result = await client.poll(80);
+    expect(result.cursor).toBe(81);
+    expect(result.messages.map((message) => message.text)).toEqual(['current']);
+    expect(request.mock.calls).toEqual([
+      [{ url: `https://api.telegram.org/bot${token}/getMe`, method: 'POST', contentType: 'application/json', body: '{}', throw: false }],
+      [{ url: `https://api.telegram.org/bot${token}/getUpdates`, method: 'POST', contentType: 'application/json', body: '{"offset":700,"limit":100,"timeout":0,"allowed_updates":["message"]}', throw: false }],
+      [{ url: `https://api.telegram.org/bot${newToken}/getMe`, method: 'POST', contentType: 'application/json', body: '{}', throw: false }],
+      [{ url: `https://api.telegram.org/bot${newToken}/getUpdates`, method: 'POST', contentType: 'application/json', body: '{"offset":80,"limit":100,"timeout":0,"allowed_updates":["message"]}', throw: false }],
+    ]);
+  });
+
+  it.each([
+    { status: 429, wait: 2_000 },
+    { status: 409, wait: 5_000 },
+  ])('keeps active $status retries and their original cursor', async ({ status, wait }) => {
+    useRetryTimers();
+    request
+      .mockResolvedValueOnce(response({ username: 'bridge_bot' }))
+      .mockResolvedValueOnce(failure(status))
+      .mockResolvedValueOnce(response([msg(700, 555, 42, 'retried')]));
+    const client = new BotClient({ getToken: () => token, getBoundChatId: () => '555', onBind: vi.fn() });
+
+    await client.connect();
+    const poll = client.poll(700);
+    await vi.advanceTimersByTimeAsync(wait - 1);
+    expect(request.mock.calls).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+
+    const result = await poll;
+    expect(result.cursor).toBe(701);
+    expect(result.messages.map((message) => message.text)).toEqual(['retried']);
+    expect(request.mock.calls.slice(1)).toEqual([
+      [{ url: `https://api.telegram.org/bot${token}/getUpdates`, method: 'POST', contentType: 'application/json', body: '{"offset":700,"limit":100,"timeout":0,"allowed_updates":["message"]}', throw: false }],
+      [{ url: `https://api.telegram.org/bot${token}/getUpdates`, method: 'POST', contentType: 'application/json', body: '{"offset":700,"limit":100,"timeout":0,"allowed_updates":["message"]}', throw: false }],
+    ]);
+  });
+
+  it('ignores a late rate limit without notifying or retrying in the new lifecycle', async () => {
+    useRetryTimers();
+    const pending = deferred<RequestUrlResponse>();
+    request
+      .mockResolvedValueOnce(response({ username: 'bridge_bot' }))
+      .mockReturnValueOnce(pending.promise as never)
+      .mockResolvedValueOnce(response({ username: 'new_bot' }))
+      .mockResolvedValue(response([]));
+    let currentToken = token;
+    const onLongWait = vi.fn();
+    const client = new BotClient({ getToken: () => currentToken, getBoundChatId: () => '555', onBind: vi.fn(), onLongWait });
+
+    await client.connect();
+    const stalePoll = client.poll(700);
+    await vi.advanceTimersByTimeAsync(0);
+    await client.disconnect();
+    currentToken = newToken;
+    await client.connect();
+    pending.resolve(wireResponse(429, { ok: false, parameters: { retry_after: 61 } }));
+    await vi.advanceTimersByTimeAsync(61_000);
+
+    await expect(stalePoll).resolves.toEqual({
+      messages: [], cursor: undefined, skipped: { nonText: 0, foreignChat: 0 },
+    });
+    expect(onLongWait).not.toHaveBeenCalled();
+    expect(request.mock.calls).toEqual([
+      [{ url: `https://api.telegram.org/bot${token}/getMe`, method: 'POST', contentType: 'application/json', body: '{}', throw: false }],
+      [{ url: `https://api.telegram.org/bot${token}/getUpdates`, method: 'POST', contentType: 'application/json', body: '{"offset":700,"limit":100,"timeout":0,"allowed_updates":["message"]}', throw: false }],
+      [{ url: `https://api.telegram.org/bot${newToken}/getMe`, method: 'POST', contentType: 'application/json', body: '{}', throw: false }],
+    ]);
+  });
+
+  it('does not send a poll that was waiting at the request gate before reconnect', async () => {
+    useRetryTimers();
+    vi.mocked(Date.now).mockReturnValue(10_000);
+    request.mockResolvedValue(response({ username: 'bridge_bot' }));
+    let currentToken = token;
+    const client = new BotClient({ getToken: () => currentToken, getBoundChatId: () => '555', onBind: vi.fn() });
+
+    await client.connect();
+    const stalePoll = client.poll(700);
+    await vi.advanceTimersByTimeAsync(0);
+    await client.disconnect();
+    currentToken = newToken;
+    const reconnect = client.connect();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await reconnect;
+
+    await expect(stalePoll).resolves.toEqual({
+      messages: [], cursor: undefined, skipped: { nonText: 0, foreignChat: 0 },
+    });
+    expect(request.mock.calls).toEqual([
+      [{ url: `https://api.telegram.org/bot${token}/getMe`, method: 'POST', contentType: 'application/json', body: '{}', throw: false }],
+      [{ url: `https://api.telegram.org/bot${newToken}/getMe`, method: 'POST', contentType: 'application/json', body: '{}', throw: false }],
+    ]);
+  });
+
+  it('does not retry a superseded connection with the new token', async () => {
+    useRetryTimers();
+    request
+      .mockResolvedValueOnce(failure(429))
+      .mockResolvedValue(response({ username: 'new_bot' }));
+    let currentToken = token;
+    const client = new BotClient({ getToken: () => currentToken, getBoundChatId: () => '555', onBind: vi.fn() });
+
+    const oldConnect = client.connect().catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    currentToken = newToken;
+    await expect(client.connect()).resolves.toEqual({ displayName: 'new_bot' });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(await oldConnect).toBeInstanceOf(Error);
+    expect(client.status()).toBe('connected');
+    expect(request.mock.calls).toEqual([
+      [{ url: `https://api.telegram.org/bot${token}/getMe`, method: 'POST', contentType: 'application/json', body: '{}', throw: false }],
+      [{ url: `https://api.telegram.org/bot${newToken}/getMe`, method: 'POST', contentType: 'application/json', body: '{}', throw: false }],
+    ]);
+  });
+});
+
+describe('BotClient active file downloads', () => {
+  it.each([
+    { status: 429, wait: 2_000 },
+    { status: 409, wait: 5_000 },
+  ])('retries an active $status download and returns its bytes', async ({ status, wait }) => {
+    useRetryTimers();
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    request.mockResolvedValueOnce(failure(status)).mockResolvedValueOnce({ ...response({}), arrayBuffer: bytes });
+    const client = new BotClient({ getToken: () => token, getBoundChatId: () => '555', onBind: vi.fn() });
+
+    const download = client.fetchFile('photos/file.jpg');
+    await vi.advanceTimersByTimeAsync(wait - 1);
+    expect(request.mock.calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(await download).toEqual(bytes);
+    expect(request.mock.calls).toEqual([
+      [{ url: `https://api.telegram.org/file/bot${token}/photos/file.jpg`, throw: false }],
+      [{ url: `https://api.telegram.org/file/bot${token}/photos/file.jpg`, throw: false }],
+    ]);
+  });
+
+  it.each([
+    { error: 'network', key: 'error.network' },
+    { error: 404, key: 'error.telegram' },
+  ])('preserves an active download $error failure', async ({ error, key }) => {
+    if (typeof error === 'number') request.mockResolvedValueOnce(failure(error));
+    else request.mockRejectedValueOnce(new Error('Transport dropped'));
+    const client = new BotClient({ getToken: () => token, getBoundChatId: () => '555', onBind: vi.fn() });
+
+    await expect(client.fetchFile('photos/file.jpg')).rejects.toMatchObject({ key });
+  });
 });
 
 describe('parseUpdates — binding', () => {
